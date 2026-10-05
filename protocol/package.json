@@ -1,0 +1,29 @@
+{
+  "name": "@tamodak/protocol",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Killit pairing protocol v1: the reference implementation behind SPEC.md and its test vectors",
+  "type": "module",
+  "exports": {
+    "./api": {
+      "source": "./src/api.ts",
+      "types": "./dist/api.d.ts",
+      "default": "./dist/api.js"
+    },
+    "./e2e": {
+      "source": "./src/e2e.ts",
+      "types": "./dist/e2e.d.ts",
+      "default": "./dist/e2e.js"
+    },
+    "./vectors/*": "./vectors/*"
+  },
+  "files": [
+    "dist",
+    "vectors"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run",
+    "vectors": "node scripts/generate-vectors.ts"
+  }
+}

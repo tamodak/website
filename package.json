@@ -1,0 +1,19 @@
+{
+  "name": "tamodak-website",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24.11.0 <25"
+  },
+  "scripts": {
+    "build": "tsc --build protocol server",
+    "test": "pnpm --recursive --workspace-concurrency=1 test",
+    "vectors": "pnpm --filter @tamodak/protocol vectors"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}

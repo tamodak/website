@@ -1,0 +1,29 @@
+{
+  "description": "HPKE base mode, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM (SPEC.md §2). sealed is enc ‖ ciphertext ‖ tag, the layout of Tink's HybridEncrypt without an output prefix. The ephemeral key is DeriveKeyPair(ikmE).",
+  "rfc9180": {
+    "info": "4f6465206f6e2061204772656369616e2055726e",
+    "ikmE": "7268600d403fce431561aef583ee1613527cff655c1343f29812e66706df3234",
+    "pkEm": "37fda3567bdbd628e88668c3c8d7e97d1d1253b6d4ea6d44c150f741f1bf4431",
+    "skEm": "52c4a758a802cd8b936eceea314432798d5baf2d7e9235dc084ab1b9cfa2f736",
+    "ikmR": "6db9df30aa07dd42ee5e8181afdb977e538f5e1fec8a06223f33f7013e525037",
+    "pkRm": "3948cfe0ad1ddb695d780e59077195da6c56506b027329794ab02bca80815c4d",
+    "skRm": "4612c550263fc8ad58375df3f557aac531d26850903e55a9f23f21d8534e8ac8",
+    "plaintext": "4265617574792069732074727574682c20747275746820626561757479",
+    "aad": "436f756e742d30",
+    "ciphertext": "f938558b5d72f1a23810b4be2ab4f84331acc02fc97babc53a52ae8218a355a96d8770ac83d07bea87e13c512a",
+    "sealed": "37fda3567bdbd628e88668c3c8d7e97d1d1253b6d4ea6d44c150f741f1bf4431f938558b5d72f1a23810b4be2ab4f84331acc02fc97babc53a52ae8218a355a96d8770ac83d07bea87e13c512a",
+    "sequenceNumber": 0,
+    "source": "RFC 9180 Appendix A.1.1 and A.1.1.1"
+  },
+  "killit": [
+    {
+      "name": "envelope info from A to B, empty AAD",
+      "recipient": "B",
+      "ikmE": "e2f4528cf6f2516d74b108e468c5824ce03d68c28764aee50a968c5fc833f647",
+      "info": "0d4b494c4c49542d454e562d7631be134be045154c512f8b2224f52868d1befe0bfd9954c780475e6496c5e392b65ec68795f5e46271d5227dc76546273a65546e74046aa41822b40050cc7cbfd6",
+      "aad": "",
+      "plaintext": "4b696c6c69742048504b45206578616d706c65",
+      "sealed": "d95005d38ad54d2fb393528fd8ede00279d13bfb10ab0b2e31936998cbdc4f0f11d376f9220b21f5cf718f6349e7bb5bab5f33f5ab4f9a8f16386ee165cbbdd0a49b4f"
+    }
+  ]
+}

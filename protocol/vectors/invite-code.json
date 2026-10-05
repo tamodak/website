@@ -1,0 +1,77 @@
+{
+  "description": "Invite codes (SPEC.md §6.1): 5 bytes as 8 Crockford base32 symbols, and how typed input parses.",
+  "alphabet": "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+  "format": [
+    {
+      "bytes": "0000000000",
+      "code": "0000-0000"
+    },
+    {
+      "bytes": "ffffffffff",
+      "code": "ZZZZ-ZZZZ"
+    },
+    {
+      "bytes": "0123456789",
+      "code": "04HM-ASW9"
+    },
+    {
+      "bytes": "b793d8f326",
+      "code": "PY9X-HWS6"
+    }
+  ],
+  "parse": [
+    {
+      "input": "PY9X-HWS6",
+      "valid": true,
+      "bytes": "b793d8f326"
+    },
+    {
+      "input": "py9x-hws6",
+      "valid": true,
+      "bytes": "b793d8f326"
+    },
+    {
+      "input": "PY9XHWS6",
+      "valid": true,
+      "bytes": "b793d8f326"
+    },
+    {
+      "input": " PY9X HWS6 ",
+      "valid": true,
+      "bytes": "b793d8f326"
+    },
+    {
+      "input": "ILOO-oiLl",
+      "valid": true,
+      "bytes": "0840000421"
+    },
+    {
+      "input": "0000-000",
+      "valid": false
+    },
+    {
+      "input": "0000-00000",
+      "valid": false
+    },
+    {
+      "input": "0000-000U",
+      "valid": false
+    },
+    {
+      "input": "0000_0000",
+      "valid": false
+    },
+    {
+      "input": "0000-000Ð",
+      "valid": false
+    },
+    {
+      "input": "",
+      "valid": false
+    },
+    {
+      "input": "00000000                         ",
+      "valid": false
+    }
+  ]
+}
