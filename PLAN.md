@@ -1,6 +1,6 @@
 # tamodak.org — Website, pairing server, and Killit pairing plan
 
-Status: **draft v8**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14 and the UI/UX design in §15. No product questions are open.
+Status: **draft v9**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14 and the UI/UX design in §15. No product questions are open. **Phase 1 is implemented** (Killit branch `phase-1`, 2026-10-05; see §11 and §12).
 
 This covers three things that have to be designed together:
 
@@ -18,7 +18,7 @@ This covers three things that have to be designed together:
 | Install awareness | None. There is no receiver or service, and no `PACKAGE_ADDED` handling. | Has to be built (§1). |
 | Network | **No `INTERNET` permission.** Today the app has zero remote attack surface. | Adding networking is the biggest security change Killit will ever make, so §6 is written around it. |
 | Durable state | `DurableStore` holds the application restrictions, which survive Clear data. `LockPreferences` (DataStore) is the cache. | The pair list, key material references, the approved set, pending requests and unpair deadlines must go into **both** stores, per CLAUDE.md. |
-| Prior pairing | The QR pairing was **deliberately removed** in `2cf8877` and won't be restored. | New code. The lesson worth keeping from it is that signed bytes must bind purpose, nonce, requester and signer, and that both ends must build those bytes from one shared spec. |
+| Prior pairing | The QR pairing was **deliberately removed** in `cf0b03c` and won't be restored. | New code. The lesson worth keeping from it is that signed bytes must bind purpose, nonce, requester and signer, and that both ends must build those bytes from one shared spec. |
 | Passkey hashing | `SHA-256(salt ‖ passkey)`, one iteration (`CredentialStore`). | A 6-digit PIN falls in milliseconds if the hash ever leaks. After pairing this passkey **authorises approvals for other people's devices**, so it matters more. Move to PBKDF2 (≥ 310k iterations) or Argon2id, with a record-format migration. |
 | Release delay | `RELEASE_DELAY_MILLIS` = 3 days in release builds. | **Raise it to 14 days** (`1_209_600_000L`), as decided. |
 | Hardening | Blocks uninstall, force stop, safe boot, factory reset and add-user, plus optional apps-control and date/time. | Add `DISALLOW_ADD_PRIVATE_PROFILE` (Android 15 Private Space) and verify `DISALLOW_ADD_MANAGED_PROFILE`, because apps in another profile are outside Killit's reach. The 30-day unpair timer relies on `blockDateTime`. Consider `DISALLOW_DEBUGGING_FEATURES` once pairing exists (see §6.1). |
@@ -641,13 +641,30 @@ Every wait is a `BuildConfig` field in Killit, following the existing `RELEASE_D
 
 No product questions are open. Next: the protocol and API specification (§16, to be written).
 
+**2026-10-05, implementing Phase 1**
+
+| # | Decision |
+|---|---|
+| K1 | The passkey is hashed with **Argon2id** using RFC 9106's second recommended parameters (t=3, p=4, m=64 MiB, 128-bit salt, 256-bit output), through the Argon2 reference C implementation (argon2kt). The platform's PBKDF2 was measured first and rejected: it runs in Java, and 310k iterations took 1.2–2.5 s per unlock on emulators against ~0.1 s for Argon2id. |
+| K2 | Default-blocking is **always on** once Killit is device owner and has a passkey. There is no switch. |
+| K3 | Local structured data (the known-package list now; requests, chance counters and history later) lives in **Room**. The durable copy stays in application restrictions. |
+| K4 | Counted strings use **`<plurals>`** (developer.android.com), replacing the count-last rule (§15.10). |
+| K5 | Killit has **no users yet**, so nothing needs backward compatibility or data migration until its first release. |
+
+Findings while implementing Phase 1:
+
+- **The durable store never persisted anything.** Application restrictions can't hold a `long`, and system_server silently dropped every write that contained one, so the copy meant to survive Clear data was always empty. Fixed: wall-clock times are stored as strings, and a bundle with an unsupported type is refused.
+- `DISALLOW_CONFIG_DATE_TIME` only exists from Android 9, so on Android 8 the date/time toggle did nothing and the release delay could be skipped. Fixed with `setAutoTimeRequired` below API 28.
+- Private Space and work profiles are already blocked by platform default for a device owner (verified). Killit sets both restrictions anyway and never clears them.
+- **Android 14's first release** (fixed in QPR1) restores a device owner's restrictions after a reboot as restrictions no admin owns. They can't be cleared, and they even survive releasing device owner, until a recovery wipe. This is a platform bug Killit can't work around; it fails in the restrictive direction.
+
 ---
 
 ## 12. Phased roadmap
 
 | Phase | Scope | Server needed? |
 |---|---|---|
-| **1** | Killit: `knownPackages`, install watcher (foreground service + diff), default-block, pending UI, Private Space restriction, passkey KDF migration, 14-day release delay, per-build durations, the `lockOnBackground` busy fix (H10), monotonic timers (H3) | No |
+| **1** ✅ | Killit: `knownPackages`, install watcher (foreground service + diff), default-block, pending UI, Private Space restriction, passkey KDF (K1), 14-day release delay, the `lockOnBackground` busy fix (H10), the Android 8 date/time lock (H3). The other per-build durations arrive with the features that use them. **Done 2026-10-05.** | No |
 | **2** | `website/`: Vue site and the compose/Caddy stack on `test.tamodak.org`, privacy policy, APK download with fingerprints | Static only |
 | **3** | `protocol/` spec and test vectors. API: attestation registration, signed requests, invites with commit/reveal, links, mailbox, push | Yes |
 | **4** | Killit: `INTERNET`, `net/` + `pairing/Envelope` (Keystore sign + Tink HPKE), remote pairing with the safety code, the new gate (Unlock / Requests), the pairs screen | Yes |
@@ -944,7 +961,7 @@ The password is created the first time either card needs it. There's **one Killi
 
 - Short sentences, and say what happens next: "Leaving cancels the request."
 - Each screen states its consequences once, in the place where the action is taken. Don't repeat them in dialogs.
-- Every new string goes into all 9 locales, counted strings are phrased count-last (existing rule), and Arabic mirroring is checked (the Deny button moves to the right).
+- Every new string goes into all 9 locales, counted strings are `<plurals>` with every quantity each language needs (K4), and Arabic mirroring is checked (the Deny button moves to the right).
 
 ### 15.11 Password explanation for guardians (I3)
 
