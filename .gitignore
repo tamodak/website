@@ -1,0 +1,14 @@
+# Editor lock files (LibreOffice / OnlyOffice)
+.~lock.*#
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Secrets never go in git (§6.6); only *.example templates are tracked
+.env
+.env.*
+!.env.example
+*.pem
+*.key
