@@ -1,0 +1,29 @@
+{
+  "name": "@tamodak/server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The tamodak.org pairing server: a mailbox that relays Killit's end-to-end encrypted messages (PLAN.md §8)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build",
+    "start": "node dist/main.js",
+    "migrate": "node dist/migrate.js",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
+  },
+  "dependencies": {
+    "@fastify/helmet": "13.1.1",
+    "@fastify/rate-limit": "11.2.0",
+    "@fastify/type-provider-typebox": "6.1.0",
+    "@tamodak/protocol": "workspace:*",
+    "asn1js": "3.0.10",
+    "fastify": "5.12.5",
+    "kysely": "0.29.6",
+    "node-pg-migrate": "9.0.0",
+    "pg": "8.23.1",
+    "pkijs": "3.4.1",
+    "typebox": "1.3.34"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}

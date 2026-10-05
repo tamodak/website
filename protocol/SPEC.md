@@ -179,6 +179,7 @@ Errors are JSON, `{ "error": "<code>", … }`, with these statuses:
 | 413 | `too_large` | | A body over the route's limit |
 | 429 | `rate_limited` or `mailbox_full` | | Includes a `Retry-After` header |
 | 503 | `unavailable` | | The database or Google's revocation list is unreachable |
+| 500 | `internal` | | A server bug. The details go to the server's log, never to the client. |
 
 ---
 
@@ -202,11 +203,11 @@ The answer is `201 { "device": base64url(fp), "securityLevel": "tee" | "strongbo
 The server verifies everything below, following developer.android.com's *Verify hardware-backed key pairs with key attestation* and Google's `android/keyattestation` verifier. Any failure is `403 attestation_rejected` with the `reason` in brackets.
 
 1. **Chain shape** [`chain_invalid`]. 3–6 certificates that parse as X.509.
-2. **Trust anchor** [`untrusted_root`]. The last certificate's public key (its SPKI) equals a Google root's (§5.3). Only a deployment that explicitly allows software attestation also accepts the Android software-attestation root, so that emulators can register with a local development server.
+2. **Trust anchor** [`untrusted_root`]. The last certificate's public key (its SPKI) equals a Google root's (§5.3). One exception exists, for emulators talking to a developer's own machine: a server started with `KILLIT_ENV=development` and `ATTESTATION_DEV_ACCEPT_ANY_ROOT=true` accepts any self-signed root and software-level keys, and records that it did. The production and test servers refuse to start with that setting.
 3. **Name chaining and signatures** [`chain_invalid`]. Each certificate's issuer equals the next one's subject, and each verifies under the next one's public key. The certificate below the root verifies under the trust anchor's key.
 4. **Validity** [`chain_invalid`]. Checked at the current time for every certificate except the leaf, whose dates the phone sets, and the root, which is a trust anchor. A certificate that isn't valid yet fails. An expired one fails too, unless the chain is *factory-provisioned* (the certificate directly below the root has a `serialNumber` attribute in its subject): factory keys can't be rotated, so Google accepts their expired certificates.
-5. **Revocation** [`revoked`]. No certificate's serial number (lowercase hex, no leading zeros) appears in Google's status list (`https://android.googleapis.com/attestation/status`) as `REVOKED` or `SUSPENDED`. If the list hasn't been fetched within the last 24 hours, registration fails closed with `503 unavailable`.
-6. **Extension placement** [`extension_missing`, `extension_misplaced`]. The key-description extension (OID `1.3.6.1.4.1.11129.2.1.17`) is in the leaf and in no other certificate. Without this rule, an attested key could sign a fake leaf that carries a forged extension: the chain-extension attack.
+5. **Revocation** [`revoked`]. No certificate's serial number appears in Google's status list (`https://android.googleapis.com/attestation/status`) as `REVOKED` or `SUSPENDED`. The list is documented as lowercase hex without leading zeros, but on 2026-10-05 more than half of its entries were 17–20-digit decimal numbers, so each serial is looked up in both forms. If the list hasn't been fetched within the last 24 hours, registration fails closed with `503 unavailable`.
+6. **Extension placement** [`extension_missing`, `extension_misplaced`, `extension_invalid`]. The key-description extension (OID `1.3.6.1.4.1.11129.2.1.17`) is in the leaf and in no other certificate. Without this rule, an attested key could sign a fake leaf that carries a forged extension: the chain-extension attack.
 7. **Key description:**
    - [`challenge_mismatch`] `attestationChallenge` equals the challenge in the body, and that challenge was issued by this server, isn't expired and hasn't been used. It is consumed now.
    - [`security_level`] `attestationSecurityLevel` and `keyMintSecurityLevel` are both `TrustedEnvironment` (1) or `StrongBox` (2). `Software` (0) is accepted only where software attestation is allowed.
@@ -252,13 +253,15 @@ The *creator* ("A") shows the code and the *joiner* ("B") types it. **The server
 | 5 | both | `POST /v1/links` `{ "invite" }` after the users tap "They match" | Only in `revealed`. When both have confirmed, → `linked`, and the link exists (§7). |
 | – | either | `DELETE /v1/invites/{id}` | → `cancelled` ("They don't match", back, timeout) |
 
-Both phones follow the invite with `GET /v1/invites/{id}?wait=s` (a long poll, `s` ≤ 30). It answers when the state changes or after `s` seconds:
+Both phones follow the invite with `GET /v1/invites/{id}`:
 
 ```
 { "id", "state", "role": "creator" | "joiner", "expiresAt",
   "commit"?, "creatorReveal"?, "joinerReveal"?,
-  "confirmed": { "self": bool, "peer": bool } }
+  "confirmed": { "self": bool, "peer": bool }, "version" }
 ```
+
+`state` is one of the states above, or `expired` once the deadline has passed. `role` is the caller's part in the ceremony, never guardian or protected. To wait for news, a phone sends back the `version` it last saw: `GET /v1/invites/{id}?wait=s&known=<version>` (`s` ≤ 30) answers as soon as anything changes, or after `s` seconds.
 
 For every reveal, the server also checks its length, the bundle version, and that `fp(signPk)` is the revealing device. That keeps the transcript and the link consistent. It doesn't replace the phones' own checks.
 
@@ -295,7 +298,7 @@ Before showing the code, each phone checks that the peer's `encSig` verifies and
 - A link is created only by step 5 of §6.2, once both phones have confirmed. `POST /v1/links` returns `{ "state": "waiting" | "linked", "peer": base64url(fp) }`, and the phone checks that `peer` equals the fingerprint from the bundle.
 - `GET /v1/links` returns `{ "links": [{ "peer", "lastSeenDaysAgo" }] }`: whole days since the peer's last signed request (PLAN.md §3.11). The server stores only the date.
 - `DELETE /v1/links/{peer}` returns `204` and is idempotent. A phone deletes a link only when no pairing is left between the two phones in either direction (after LEAVE, a completed UNPAIR, a declined offer, or the end of device-owner release), and only after its last message on it has been sent.
-- A phone has at most 50 links.
+- A phone has at most 50 links. The confirmation that would create a 51st answers `409 conflict` with `state: "link_limit"`.
 
 ---
 
@@ -304,7 +307,7 @@ Before showing the code, each phone checks that the peer's `encSig` verifies and
 | Call | Result |
 |---|---|
 | `POST /v1/messages` `{ "messages": [{ "to": base64url(fp), "envelope": base64url }] }`, 1–50 items, each envelope exactly 8240 bytes | `202 { "accepted": n }`. All or nothing: if any recipient isn't linked, `403 not_linked` with `peers`. A full mailbox is `429 mailbox_full`. |
-| `GET /v1/messages?wait=s` (`s` 0–30) | `{ "messages": [{ "id", "from", "envelope", "receivedAt" }] }`, oldest first, at most 32. With `wait`, the server holds the request until a message arrives or `s` seconds pass. |
+| `GET /v1/messages?wait=s` (`s` 0–30) | `{ "messages": [{ "id", "from", "envelope", "receivedAt" }] }`, in the order the server accepted them, at most 32. With `wait`, the server holds the request until a message arrives or `s` seconds pass. |
 | `POST /v1/messages/ack` `{ "ids": [...] }` (1–64) | `204`. The server deletes them. Ids that aren't the caller's are ignored. |
 
 - Killit acknowledges a message once it has stored it locally or rejected it, not when the user acts on it. Unacknowledged messages are delivered again, and the `messageId` check (§10.3) absorbs the duplicates.

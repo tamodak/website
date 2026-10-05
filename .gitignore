@@ -12,3 +12,5 @@ coverage/
 !.env.example
 *.pem
 *.key
+# ...except these: public attestation certificate chains used as test fixtures, no keys.
+!server/test/fixtures/attestation/*.pem
