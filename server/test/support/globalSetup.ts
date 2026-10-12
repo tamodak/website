@@ -28,7 +28,8 @@ declare module 'vitest' {
   }
 }
 
-const IMAGE = 'postgres:18-alpine';
+// The same major version the deployment runs (deploy/postgres: Ubuntu 24.04's PostgreSQL 16).
+const IMAGE = 'postgres:16-alpine';
 const TEMPLATE = 'killit_template';
 const APP_USER = 'killit_app';
 

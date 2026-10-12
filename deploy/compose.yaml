@@ -1,0 +1,162 @@
+# The server stack for api.test.tamodak.org (PLAN.md §10), run with Docker on the Ubuntu 24.04
+# server. RUNBOOK.md explains every step; .env and secrets/ hold this deployment's own values and
+# never go into git.
+#
+#   caddy          TLS and the only open ports (80, 443)
+#   api-test       the pairing API, reachable only through Caddy
+#   migrate-test   applies schema migrations, then exits; the API waits for it
+#   db-test        PostgreSQL 16, on an internal network with no route out
+#   backup-test    nightly encrypted backups (enable with COMPOSE_PROFILES=backups)
+#
+# Every image is built here from Ubuntu 24.04, every container runs as a non-root user from a
+# read-only filesystem with no capabilities, and each reads only its own secrets. The services
+# are suffixed -test so the production set can join them at the cutover (PLAN.md §12, Phase 6).
+
+name: killit
+
+x-hardened: &hardened
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    # The logs hold no bodies or addresses (server/src/app.ts), and still need not linger.
+    options: { max-size: 10m, max-file: "3" }
+
+services:
+  caddy:
+    <<: *hardened
+    build: ./caddy
+    image: killit/caddy:local
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      API_TEST_HOST: ${API_TEST_HOST:-api.test.tamodak.org}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    tmpfs: [/tmp]
+    networks:
+      edge:
+        # Fixed, so the API trusts exactly this address to report a client's IP. It lies outside
+        # the network's dynamic range (below), so no other container can be given it first.
+        ipv4_address: 172.31.250.10
+    depends_on: [api-test]
+
+  api-test:
+    <<: *hardened
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: killit/api:local
+    environment:
+      KILLIT_ENV: test
+      API_AUDIENCE: ${API_TEST_HOST:-api.test.tamodak.org}
+      DATABASE_URL_FILE: /run/secrets/db_app_url
+      INVITE_CODE_KEY_FILE: /run/secrets/invite_code_key
+      ATTESTATION_CERT_DIGESTS: ${TEST_ATTESTATION_CERT_DIGESTS:?set TEST_ATTESTATION_CERT_DIGESTS in .env}
+      # Empty runs without push until the Firebase key is in place (RUNBOOK.md, "Firebase").
+      FCM_CREDENTIALS_FILE: ${TEST_FCM_CREDENTIALS_FILE:-}
+      TRUST_PROXY: 172.31.250.10
+      LOG_LEVEL: info
+    secrets:
+      - { source: test_db_app_url, target: db_app_url }
+      - { source: test_invite_code_key, target: invite_code_key }
+      - { source: fcm_service_account, target: fcm_service_account.json }
+    tmpfs: [/tmp]
+    networks: [edge, data-test]
+    depends_on:
+      db-test: { condition: service_healthy }
+      migrate-test: { condition: service_completed_successfully }
+
+  migrate-test:
+    <<: *hardened
+    image: killit/api:local
+    restart: "no"
+    command: ["node", "dist/migrate.js"]
+    environment:
+      MIGRATION_DATABASE_URL_FILE: /run/secrets/db_owner_url
+    secrets:
+      - { source: test_db_owner_url, target: db_owner_url }
+    networks: [data-test]
+    depends_on:
+      db-test: { condition: service_healthy }
+
+  db-test:
+    <<: *hardened
+    build: ./postgres
+    image: killit/postgres:local
+    secrets:
+      - { source: test_db_superuser_password, target: db_superuser_password }
+      - { source: test_db_owner_password, target: db_owner_password }
+      - { source: test_db_app_password, target: db_app_password }
+      - { source: test_db_backup_password, target: db_backup_password }
+    volumes:
+      - db-test:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql:uid=10002,gid=10002,mode=0755
+    shm_size: 256m
+    networks: [data-test]
+
+  backup-test:
+    <<: *hardened
+    build: ./backup
+    image: killit/backup:local
+    profiles: [backups]
+    environment:
+      BACKUP_NAME: killit-test
+      BACKUP_HOUR_UTC: "3"
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-oci}
+      BACKUP_BUCKET: ${BACKUP_BUCKET:-}
+      OCI_S3_ENDPOINT: ${OCI_S3_ENDPOINT:-}
+      OCI_REGION: ${OCI_REGION:-}
+      BACKUP_HEARTBEAT_URL: ${TEST_BACKUP_HEARTBEAT_URL:-}
+      PGHOST: db-test
+      HOME: /tmp
+    secrets:
+      - { source: test_backup_pgpass, target: backup_pgpass }
+      - { source: backup_age_recipients, target: backup_age_recipients }
+      - { source: oci_s3_access_key_id, target: oci_s3_access_key_id }
+      - { source: oci_s3_secret_access_key, target: oci_s3_secret_access_key }
+    tmpfs: [/tmp]
+    networks: [data-test, egress]
+    depends_on:
+      db-test: { condition: service_healthy }
+
+networks:
+  # Caddy and the API. The API also reaches FCM and Google's revocation list through it.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+          ip_range: 172.31.250.128/25
+  # The database's only network: internal, so it has no route to the internet at all.
+  data-test:
+    internal: true
+  # The backup job's way out, to Object Storage.
+  egress: {}
+
+volumes:
+  caddy-data:
+  caddy-config:
+  db-test:
+
+# Created by scripts/new-secrets.sh, each owned by the uid of the one container that reads it.
+secrets:
+  test_db_superuser_password: { file: ./secrets/test_db_superuser_password }
+  test_db_owner_password: { file: ./secrets/test_db_owner_password }
+  test_db_app_password: { file: ./secrets/test_db_app_password }
+  test_db_backup_password: { file: ./secrets/test_db_backup_password }
+  test_db_owner_url: { file: ./secrets/test_db_owner_url }
+  test_db_app_url: { file: ./secrets/test_db_app_url }
+  test_backup_pgpass: { file: ./secrets/test_backup_pgpass }
+  test_invite_code_key: { file: ./secrets/test_invite_code_key }
+  fcm_service_account: { file: ./secrets/fcm_service_account.json }
+  backup_age_recipients: { file: ./secrets/backup_age_recipients }
+  oci_s3_access_key_id: { file: ./secrets/oci_s3_access_key_id }
+  oci_s3_secret_access_key: { file: ./secrets/oci_s3_secret_access_key }

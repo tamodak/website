@@ -14,3 +14,7 @@ coverage/
 *.key
 # ...except these: public attestation certificate chains used as test fixtures, no keys.
 !server/test/fixtures/attestation/*.pem
+
+# The deployment's own values (deploy/RUNBOOK.md): secret files, and local backup drills
+deploy/secrets/
+deploy/local-backups/

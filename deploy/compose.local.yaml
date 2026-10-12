@@ -1,0 +1,17 @@
+# Runs the stack on a developer machine (RUNBOOK.md, "Trying the stack locally"):
+#     docker compose -f compose.yaml -f compose.local.yaml up -d --build
+# Caddy serves https://localhost:18443 from its own local CA instead of Let's Encrypt (set
+# API_TEST_HOST=localhost in .env), and backups go to ./local-backups instead of Object Storage.
+
+services:
+  caddy:
+    ports: !override
+      - "18080:80"
+      - "18443:443"
+
+  backup-test:
+    environment:
+      BACKUP_REMOTE: local
+      BACKUP_BUCKET: /backups
+    volumes:
+      - ./local-backups:/backups

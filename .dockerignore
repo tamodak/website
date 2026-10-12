@@ -1,0 +1,9 @@
+# The API image is built from protocol/ and server/ only (server/Dockerfile).
+**/node_modules
+**/dist
+**/coverage
+.git
+deploy
+web
+**/*.log
+.~lock.*#

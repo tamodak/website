@@ -1,0 +1,27 @@
+# The public front of the server (PLAN.md §10, decision I2). Caddy obtains and renews the TLS
+# certificates and proxies to the API, which listens only on the compose network.
+#
+# Only the test API is live now. api.tamodak.org, tamodak.org and test.tamodak.org get their own
+# blocks at the cutover (PLAN.md §12, Phase 6).
+
+{
+	email {$ACME_EMAIL}
+	# Nothing reconfigures Caddy at runtime: a changed Caddyfile is applied by restarting it.
+	admin off
+	servers {
+		# Killit's HTTP client speaks HTTP/1.1 and HTTP/2; leaving HTTP/3 off keeps UDP closed.
+		protocols h1 h2
+	}
+}
+
+{$API_TEST_HOST:api.test.tamodak.org} {
+	# The API's own limits are lower (640 KiB at most); this only stops anything far larger
+	# before it is read.
+	request_body {
+		max_size 1MB
+	}
+	reverse_proxy api-test:8080
+	# Say nothing about the software behind the name.
+	header -Server
+	header -Via
+}

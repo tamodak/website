@@ -2,8 +2,12 @@
   "name": "@tamodak/server",
   "version": "1.0.0",
   "private": true,
-  "description": "The tamodak.org pairing server: a mailbox that relays Killit's end-to-end encrypted messages (PLAN.md §8)",
+  "description": "The tamodak.org pairing server: a mailbox that relays Killit's end-to-end encrypted messages (PLAN.md \u00a78)",
   "type": "module",
+  "files": [
+    "dist",
+    "migrations"
+  ],
   "scripts": {
     "build": "tsc --build",
     "start": "node dist/main.js",

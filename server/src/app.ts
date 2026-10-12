@@ -83,7 +83,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await app.register(helmet, {
     // An API serves no documents: nothing may be framed, loaded or run from its responses.
-    contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+    // Helmet's defaults are written for HTML pages, so only these two directives are sent.
+    contentSecurityPolicy: { useDefaults: false, directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
   });
 
   await app.register(rateLimit, {

@@ -1,6 +1,6 @@
 # Killit pairing protocol, version 1
 
-Status: **draft for review** (Phase 3, 2026-10-05). It is normative for Killit and for the tamodak.org server.
+Status: **draft for review** (Phase 3, 2026-10-12). It is normative for Killit and for the tamodak.org server.
 
 PLAN.md explains the product and *why* (§2–§6). This document fixes *the bytes*: what is signed, encrypted, sent and checked. Where the two disagree, this document wins, and PLAN.md §16 lists every refinement it makes.
 

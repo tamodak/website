@@ -1,6 +1,6 @@
 # tamodak.org — Website, pairing server, and Killit pairing plan
 
-Status: **draft v9**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14 and the UI/UX design in §15. No product questions are open. **Phase 1 is implemented** (Killit branch `phase-1`, 2026-10-05; see §11 and §12).
+Status: **draft v10**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14, the UI/UX design in §15, and the protocol in §16 and `protocol/SPEC.md`. No product questions are open. **Phases 1 and 3 are implemented**: Killit's default-blocking (2026-10-05), and the protocol, the pairing server and its deploy stack (2026-10-12). See §11 and §12.
 
 This covers three things that have to be designed together:
 
@@ -428,44 +428,38 @@ A slave **can't open its own Killit** while the server is unreachable, and can't
 
 ## 8. Backend design (`website/server`)
 
-**Stack:** Node 24 LTS, TypeScript, **Fastify**, `pg` + **Kysely**, `node-pg-migrate`, pino, `@fastify/helmet`, `@fastify/rate-limit`, `pkijs`/`asn1js` (attestation), `firebase-admin`, and Vitest. The server has **no decryption code at all**.
+**Stack:** Node 24 LTS, TypeScript, **Fastify**, `pg` + **Kysely**, `node-pg-migrate`, pino, `@fastify/helmet`, `@fastify/rate-limit`, `pkijs`/`asn1js` (attestation), and Vitest. Push uses the FCM HTTP v1 API directly, without `firebase-admin` (L2). The server has **no decryption code at all**: it imports only the protocol package's API entry point, and a test fails if any server source imports anything else from it.
+
+`protocol/SPEC.md` defines the API (§4–§9) and what the server stores (§12) precisely. This section is the summary.
 
 ### 8.1 API (v1)
 
 | Method & path | Purpose |
 |---|---|
-| `POST /v1/register/challenge` | Get a nonce for key attestation |
-| `POST /v1/devices` | Register: sign pubkey plus attestation chain, enc pubkey (signed by the sign key) |
-| `PUT /v1/devices/me/push` | Set or rotate the push token |
+| `POST /v1/register/challenge` | Get a nonce for key attestation (unsigned) |
+| `POST /v1/devices` | Register: the attestation chain, signed with the new key itself |
+| `GET /v1/devices/me` | The phone's own record |
+| `PUT` / `DELETE /v1/devices/me/push` | Set or clear the FCM token |
 | `DELETE /v1/devices/me` | Delete the device and all its data |
-| `POST /v1/invites` | Create a pairing invite, returns code and expiry |
-| `POST /v1/invites/join` | Join by code, uploading B's commit |
-| `POST /v1/invites/{id}/reveal` | Carry `pkA‖nA` / `pkB‖nB` in order; the server enforces commit-before-reveal ordering |
-| `POST /v1/links` / `DELETE /v1/links/{id}` | Record or remove a routing link, signed by both or by the remover. **Routing only:** the phones decide pairing state themselves. |
-| `POST /v1/messages` | Send an envelope to a linked device |
-| `GET /v1/messages?after=` | Fetch the inbox |
+| `POST /v1/invites` | Create a pairing invite: the code and its expiry |
+| `POST /v1/invites/join` | Join by code, uploading B's commitment |
+| `GET /v1/invites/{id}` | Follow the ceremony, with a long poll (`wait`, `known`) |
+| `POST /v1/invites/{id}/reveal` | `pkA‖nA`, then `pkB‖nB`; the server enforces the order and checks B's against its commitment |
+| `DELETE /v1/invites/{id}` | Cancel ("They don't match") |
+| `POST /v1/links` | Confirm the safety code; the link exists once both have. **Routing only:** the phones decide pairing state. |
+| `GET /v1/links` / `DELETE /v1/links/{peer}` | List links with "last seen", or remove one |
+| `POST /v1/messages` | Send envelopes to linked phones |
+| `GET /v1/messages` | Fetch the mailbox, with a long poll (`wait`) |
 | `POST /v1/messages/ack` | Acknowledge, after which the server deletes |
 | `GET /healthz` | Liveness check |
 
 ### 8.2 Schema (Postgres)
 
-```sql
-devices      (id uuid pk, fingerprint bytea unique, sign_pk bytea, enc_pk bytea, enc_pk_sig bytea,
-              attestation jsonb, security_level text, push_kind text, push_token text,
-              created_at, last_seen_at, revoked_at)
-invites      (id uuid pk, code_hash bytea unique, creator uuid, joiner uuid null,
-              state text, commit bytea, creator_reveal bytea, joiner_reveal bytea,
-              attempts int, expires_at, consumed_at)
-links        (id uuid pk, device_a uuid, device_b uuid, sig_a bytea, sig_b bytea,
-              created_at, removed_at, unique(least(a,b), greatest(a,b)))
-messages     (id uuid pk, sender uuid, recipient uuid, body bytea check (length(body) <= 8192),
-              created_at, acked_at)
-seen_nonces  (device uuid, nonce bytea, expires_at, primary key(device, nonce))
-```
+`server/migrations/` holds it. It has six tables: `devices` (fingerprint, attested key, security level, attestation summary, FCM token, the *date* last seen), `attestation_challenges`, `seen_nonces`, `invites` (code HMAC, participants, commitment, reveals, confirmations), `links` (one row per pair of phones), and `messages` (sender fingerprint, recipient, the 8240-byte envelope).
 
-- There's **no `kind` column**, because the server can't know it.
-- Unacknowledged messages stay until they're acknowledged, since requests have no expiry. A cap per recipient and a per-sender rate limit stop abuse.
-- A periodic job purges expired invites, nonces and acknowledged messages.
+- There's **no `kind` column**, no role, and no encryption key: the server can't know them.
+- Unacknowledged messages stay until they're acknowledged, since requests have no expiry. A cap per recipient and per sender, and a per-device rate limit, stop abuse.
+- A periodic job purges expired challenges and nonces, and invites an hour after they end.
 
 ---
 
@@ -489,20 +483,22 @@ seen_nonces  (device uuid, nonce bytea, expires_at, primary key(device, nonce))
 ```
 website/
   PLAN.md
-  protocol/          message/SAS/auth spec + JSON test vectors (used by Killit AND server tests)
-  server/            Fastify API (TypeScript)
-    src/{routes,auth,attestation,invites,links,messages,push,db}/
-    migrations/  test/
-  web/               Vue 3 + vite-ssg site
+  protocol/          SPEC.md, its TypeScript reference implementation (src/), and the JSON test vectors
+                     (vectors/) that Killit's tests and the server's tests both check
+  server/            Fastify API: src/{attestation,db,jobs,push,routes}/, migrations/, test/, Dockerfile
+  web/               Vue 3 + vite-ssg site (Phase 2, built last)
   deploy/
-    docker-compose.yml   caddy + api + postgres (+ backup sidecar)
-    Caddyfile            tamodak.org · api. · test. · api.test. (I2)
-    RUNBOOK.md           provision, deploy, restore, rotate secrets
+    compose.yaml     caddy + api + migrate + postgres + backup, every image built on Ubuntu 24.04
+    Caddyfile        api.test. now; tamodak.org · api. · test. at the cutover (I2)
+    caddy/ postgres/ backup/     the images' Dockerfiles and scripts
+    scripts/new-secrets.sh       creates the secret files, each owned by the one container that reads it
+    RUNBOOK.md       provision, deploy, back up, restore, update, rotate secrets
 ```
 
-- The Ampere A1 (ARM) Always Free shape is the target, so build ARM or multi-arch images. The API container runs as non-root with a read-only filesystem.
+- The server is **Ubuntu 24.04 LTS on the Ampere A1 (arm64) Always Free shape**, and runs the stack with **Docker, on images built from Ubuntu 24.04** (L4). The images are built on the server itself, so natively for arm64.
+- Every container runs as its own non-root user, from a read-only filesystem, with no capabilities. Only Caddy publishes ports (80 and 443), and the database sits on an internal network with no route out.
 - **Cutover:**
-  1. Stand up `api.tamodak.org`, `test.tamodak.org` and `api.test.tamodak.org` while the old blog stays up.
+  1. Stand up `api.tamodak.org`, `test.tamodak.org` and `api.test.tamodak.org` while the old blog stays up. `api.test` comes first (RUNBOOK.md).
   2. When the site is ready, point `tamodak.org` at `web/dist`.
   3. **Delete the blog** (F4).
 
@@ -639,7 +635,7 @@ Every wait is a `BuildConfig` field in Killit, following the existing `RELEASE_D
 |---|---|
 | J1 | **One password at the door (option B).** Every part of the app asks for the phone's Killit password first: *My phone* (locked or not) and *Phones I guard*. The protected user knows their own password, so they can use every action. Nobody else holding the phone can do anything. Keeping the password private is the user's responsibility. This **replaces D2** ("sending a request needs no password"). |
 
-No product questions are open. Next: the protocol and API specification (§16, to be written).
+No product questions are open. Next: the protocol and API specification (§16).
 
 **2026-10-05, implementing Phase 1**
 
@@ -658,6 +654,21 @@ Findings while implementing Phase 1:
 - Private Space and work profiles are already blocked by platform default for a device owner (verified). Killit sets both restrictions anyway and never clears them.
 - **Android 14's first release** (fixed in QPR1) restores a device owner's restrictions after a reboot as restrictions no admin owns. They can't be cleared, and they even survive releasing device owner, until a recovery wipe. This is a platform bug Killit can't work around; it fails in the restrictive direction.
 
+**2026-10-05 to 10-12, implementing Phase 3**
+
+| # | Decision |
+|---|---|
+| L1 | Signed messages use **length-prefixed binary**, a fixed hand-written layout per kind (no CBOR or JSON), so both sides build identical bytes and every decoder is strict and fuzzable. |
+| L2 | The server calls the **FCM HTTP v1 API directly**: a service-account JWT signed with `node:crypto`, exchanged for an access token. `firebase-admin` would bring 61 more packages that could reach the credential. Accepted on condition that it adds no vulnerability: the phone acts on no field of a push, TLS is always verified, redirects are refused, and nothing secret is logged. |
+| L3 | Phase 3 includes the **deploy stack** for `api.test.tamodak.org`, so Phase 4 can pair real phones. The site itself stays last. |
+| L4 | The server runs **Docker on Ubuntu 24.04 (Ampere, arm64), with Ubuntu-based images**. PostgreSQL is 16, from Ubuntu's own archive, so Ubuntu's security updates cover it. Node and Caddy are the official releases, pinned by checksum. |
+
+Findings while implementing Phase 3:
+
+- **Google's revocation list doesn't match its documentation.** It is documented as lowercase hex serial numbers, but more than half its entries (979 of 1759 on 2026-10-05) are decimal. Google's own Kotlin verifier only looks up hex, so it misses those. Killit's server looks up both.
+- Since February 2026, attestation chains may end in Google's new **ECDSA P-384 root** ("Key Attestation CA1") as well as the old RSA root, and remotely provisioned chains carry certificates valid for only days. The verifier was checked against nine real device chains from Google's test data, covering both roots, factory and remote provisioning, TEE and StrongBox, and Android 8.1 to 17.
+- A streamed backup (`pg_dump | age | upload`) stores an empty "backup" when the dump fails, and write-only backup credentials can't delete it again. The backup job now finishes the encrypted dump in memory before uploading.
+
 ---
 
 ## 12. Phased roadmap
@@ -665,8 +676,8 @@ Findings while implementing Phase 1:
 | Phase | Scope | Server needed? |
 |---|---|---|
 | **1** ✅ | Killit: `knownPackages`, install watcher (foreground service + diff), default-block, pending UI, Private Space restriction, passkey KDF (K1), 14-day release delay, the `lockOnBackground` busy fix (H10), the Android 8 date/time lock (H3). The other per-build durations arrive with the features that use them. **Done 2026-10-05.** | No |
-| **2** | `website/`: Vue site and the compose/Caddy stack on `test.tamodak.org`, privacy policy, APK download with fingerprints | Static only |
-| **3** | `protocol/` spec and test vectors. API: attestation registration, signed requests, invites with commit/reveal, links, mailbox, push | Yes |
+| **2** | `website/`: Vue site on `test.tamodak.org`, privacy policy, APK download with fingerprints, the Hisar Play link and the Desktop Authenticator download. The compose/Caddy stack moved into Phase 3 (L3). | Static only |
+| **3** ✅ | `protocol/` spec and test vectors. API: attestation registration, signed requests, invites with commit/reveal, links, mailbox, push. The deploy stack and runbook for `api.test.tamodak.org` (L3, L4). **Done 2026-10-12.** | Yes |
 | **4** | Killit: `INTERNET`, `net/` + `pairing/Envelope` (Keystore sign + Tink HPKE), remote pairing with the safety code, the new gate (Unlock / Requests), the pairs screen | Yes |
 | **5** | UNBLOCK_APP (explanation, 3 chances), live UNLOCK_KILLIT, UNPAIR/LEAVE/NOTICE, the 30-day timer, the approval UI (60/40 Deny), nicknames and badges, last seen, daily reminders, block-more (D7) | Yes |
 | **5b** | Optional master app management (APP_LIST + MANAGE, `RemoteEffects` whitelist) and phone handover | Yes |
@@ -974,3 +985,30 @@ This is shown the first time a phone takes the guardian role: after its first pa
 > If you forget it, you'll have to reinstall Killit and pair again.
 
 It stays readable from *Phones I guard → Settings*. There's no reset feature: changing the password needs the current one, as today.
+
+---
+
+## 16. Protocol and API specification
+
+[`protocol/SPEC.md`](protocol/SPEC.md) is the normative specification: the encoding rules, keys and fingerprints, request signatures, registration and key attestation, the invite ceremony, links, the mailbox, push, the envelope, and the body of every message kind. Where it and this plan disagree, the specification wins.
+
+[`protocol/vectors/`](protocol/vectors/) holds the test vectors, generated by the TypeScript reference implementation in `protocol/src/`. The server's tests run against them, and Killit's Kotlin tests must reproduce them in Phase 4 (§6.2 rule 8). Each vector states the outcome it was written to show, and the generator refuses to write one the implementation disagrees with.
+
+### 16.1 Refinements of this plan
+
+The specification settles details this plan left open, and changes a few it had sketched:
+
+1. **Fingerprints** are a full SHA-256 of the labelled signing key (32 bytes), never truncated, so finding a collision is out of reach.
+2. **Every structure starts with its own domain-separation label**, and every message carries a **pair id**: a hash of the pairing ceremony's transcript. Messages from an earlier pairing between the same two phones can never be replayed into a newer one.
+3. **Message header order** (§5.2): `version ‖ kind ‖ messageId ‖ pairId ‖ senderFp ‖ recipientFp ‖ createdAt ‖ body`. The fixed fields come first.
+4. **One padded size for every message** (an 8 KiB plaintext, an 8240-byte envelope) instead of 1 KB and 4 KB buckets. The server accepts nothing else, so sizes say nothing about kinds.
+5. **Icons are 32 × 32 raw RGBA pixels**, so no image decoder ever parses network input (libwebp's CVE-2023-4863 is the reason).
+6. **CANCEL is part of STATUS**, which also carries the other guardians' decisions (G10). A request has one message for "what's the state now".
+7. **Roles never reach the server.** The creator's role travels in the end-to-end PAIR_OFFER, and the joiner declines it if it conflicts with the role the joiner chose.
+8. **DECISIONs are verified against the protected phone's stored request** (§5.2): the signed bytes are rebuilt from the stored request, and only the verdict and the note are read from the message.
+9. **Request signatures bind the API host**, so a request signed for the test server can't be replayed against production.
+10. **Registration is itself a signed request** with the newly attested key, which proves the caller holds it. Verification mirrors Google's own verifier, including the chain-extension check and the factory-key exception for expired certificates.
+11. **The server stores no encryption key and no link signatures.** Phones exchange encryption keys in the ceremony, signed by their signing keys. Links are plain rows that are deleted, not marked removed, and "last seen" is stored as a date only.
+12. **The mailbox has no cursor** (`?after=` is gone). Unacknowledged messages are simply delivered again, in the order received, and the phone's message-id check drops the duplicates.
+13. **Invites live 15 minutes to be joined, then 15 more to finish**, and both phones follow them with a long poll.
+14. **The test server accepts the debug signing certificate; a local development server can accept emulators.** The latter needs `KILLIT_ENV=development` plus an explicit setting that the test and production servers refuse to start with.
