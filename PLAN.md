@@ -1,6 +1,6 @@
 # tamodak.org — Website, pairing server, and Killit pairing plan
 
-Status: **draft v10**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14, the UI/UX design in §15, and the protocol in §16 and `protocol/SPEC.md`. No product questions are open. **Phases 1 and 3 are implemented**: Killit's default-blocking (2026-10-05), and the protocol, the pairing server and its deploy stack (2026-10-12). See §11 and §12.
+Status: **draft v11**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14, the UI/UX design in §15, and the protocol in §16 and `protocol/SPEC.md`. One question is open: whether H2 should also apply to debug builds (M4). **Phases 1 and 3 are implemented**: Killit's default-blocking (2026-10-05), and the protocol, the pairing server and its deploy stack (2026-10-12). **Phases 4 and 5 are built** (2026-10-13, branch `phase-4`), with push delivery waiting for the Firebase project. See §11 and §12.
 
 This covers three things that have to be designed together:
 
@@ -669,6 +669,25 @@ Findings while implementing Phase 3:
 - Since February 2026, attestation chains may end in Google's new **ECDSA P-384 root** ("Key Attestation CA1") as well as the old RSA root, and remotely provisioned chains carry certificates valid for only days. The verifier was checked against nine real device chains from Google's test data, covering both roots, factory and remote provisioning, TEE and StrongBox, and Android 8.1 to 17.
 - A streamed backup (`pg_dump | age | upload`) stores an empty "backup" when the dump fails, and write-only backup credentials can't delete it again. The backup job now finishes the encrypted dump in memory before uploading.
 
+**2026-10-12 to 10-13, implementing Phases 4 and 5**
+
+| # | Decision |
+|---|---|
+| M1 | Phases 4 and 5 are **built together**, on branch `phase-4` (5b stays separate). |
+| M2 | The API client uses **OkHttp and kotlinx.serialization**, with JSON codecs generated at compile time, so nothing from the network is bound by reflection. |
+| M3 | **FCM is part of it.** The app reads the Firebase project from `app/google-services.json` at build time; a build without the file has no push and relies on polling. |
+| M4 | **H2 applies to release builds only** (proposed during implementation, awaiting confirmation). Debug builds keep adb while guarded, so a test phone with guardians can still be debugged. |
+| M5 | The password is asked **once per visit** (J1, "at the door"): it opens both sections until Killit leaves the foreground, and leaving locks everything again. |
+
+Findings while implementing Phases 4 and 5:
+
+- **An attestation can't be renewed.** A registration whose answer was lost can't be retried with the same key, since its certificate chain answered one challenge. The phone settles it with `GET /v1/devices/me`, and the server's "retry gives 200" path is never used by real phones.
+- Android 8 **emulator images ship software-attestation certificates that have expired**. The development server (only) no longer checks the dates of a chain that doesn't end in a Google root; production behaviour is unchanged.
+- In review, the **joiner of a ceremony** now pins the creator's reveal before sending its own, so a server can't swap the creator's reveal after seeing the joiner's.
+- **UNPAIR timers are checked after the inbox** on every sync: a denial that was already waiting on the server stops a timer that has run out, while an unreachable server still can't hold a timer back (§6.4).
+- **firebase-messaging 26 registers apps by Firebase Installation ID.** `getToken`/`onNewToken` are deprecated for `register()`/`onRegistered`, and FCM v1 deprecated `message.token` for `message.fid`. The server stores and addresses FIDs (SPEC.md §9).
+- Toolchain limits: OkHttp 5.5 needs compileSdk 37 (5.4 is used), kotlinx.serialization 1.10 needs Kotlin 2.3 (1.9 is used), and AGP 9 needs `resValues` switched on for the Firebase resources.
+
 ---
 
 ## 12. Phased roadmap
@@ -678,7 +697,7 @@ Findings while implementing Phase 3:
 | **1** ✅ | Killit: `knownPackages`, install watcher (foreground service + diff), default-block, pending UI, Private Space restriction, passkey KDF (K1), 14-day release delay, the `lockOnBackground` busy fix (H10), the Android 8 date/time lock (H3). The other per-build durations arrive with the features that use them. **Done 2026-10-05.** | No |
 | **2** | `website/`: Vue site on `test.tamodak.org`, privacy policy, APK download with fingerprints, the Hisar Play link and the Desktop Authenticator download. The compose/Caddy stack moved into Phase 3 (L3). | Static only |
 | **3** ✅ | `protocol/` spec and test vectors. API: attestation registration, signed requests, invites with commit/reveal, links, mailbox, push. The deploy stack and runbook for `api.test.tamodak.org` (L3, L4). **Done 2026-10-12.** | Yes |
-| **4** | Killit: `INTERNET`, `net/` + `pairing/Envelope` (Keystore sign + Tink HPKE), remote pairing with the safety code, the new gate (Unlock / Requests), the pairs screen | Yes |
+| **4** | Killit: `INTERNET`, `net/` + `pairing/Envelope` (Keystore sign + Tink HPKE), remote pairing with the safety code, the new gate (Unlock / Requests), the pairs screen. **Built with Phase 5 on 2026-10-12/13 (M1); push delivery waits for the Firebase project.** | Yes |
 | **5** | UNBLOCK_APP (explanation, 3 chances), live UNLOCK_KILLIT, UNPAIR/LEAVE/NOTICE, the 30-day timer, the approval UI (60/40 Deny), nicknames and badges, last seen, daily reminders, block-more (D7) | Yes |
 | **5b** | Optional master app management (APP_LIST + MANAGE, `RemoteEffects` whitelist) and phone handover | Yes |
 | **6** | Security review (threat-model walk-through, dependency audit, fuzzing envelope and invite decoders), then cut `tamodak.org` over | – |
@@ -955,10 +974,11 @@ The three rows (**Apps · Guardians · Settings**) replace today's long Home scr
 | Channel | Importance | Examples |
 |---|---|---|
 | Requests from phones I guard | High | "Ali — Samsung wants to unblock Instagram", "Ali — Samsung wants to unlock Killit (waiting now)", the daily digest |
+| News from phones I guard | Default | "Ali — Samsung: TikTok was installed and blocked", "Turned off: Block uninstalling", "Ali — Samsung has gone quiet" (H8) |
 | My phone | Default | "TikTok was blocked. Ask your guardians to allow it.", "Mom approved Instagram", "Dad stopped guarding this phone" |
 | Protection service | Min (silent) | The ongoing "Killit is protecting this phone". It only exists on protected phones. |
 
-The text is built on the receiving phone, in its own language, from structured codes (E-F3).
+The text is built on the receiving phone, in its own language, from structured codes (E-F3). News has its own channel so a guardian can quiet it and still hear requests; several notifications arriving together make one sound.
 
 ### 15.9 Onboarding (first launch)
 
