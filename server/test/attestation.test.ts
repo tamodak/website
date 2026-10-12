@@ -220,6 +220,19 @@ describe('development mode', () => {
     expect(result.summary.untrustedRoot).toBe(true);
   });
 
+  it('ignores the dates of a chain that ends in an unknown root', async () => {
+    // Older emulator images ship software-attestation certificates that have since expired.
+    const expired = { notBefore: new Date(Date.now() - 10 * DAY), notAfter: new Date(Date.now() - DAY) };
+    const chain = await buildChain(root, { phone, challenge, intermediateValidity: expired });
+    const result = verifyAttestationChain(chain, policy({ trustAnchors: GOOGLE_ROOTS, acceptAnyRoot: true }));
+    expect(result.summary.untrustedRoot).toBe(true);
+  });
+
+  it('still refuses an expired intermediate under a trusted root', async () => {
+    const expired = { notBefore: new Date(Date.now() - 10 * DAY), notAfter: new Date(Date.now() - DAY) };
+    expect(await reasonFor({ intermediateValidity: expired }, { acceptAnyRoot: true })).toBe('chain_invalid');
+  });
+
   it('still refuses a software key under a trusted root', async () => {
     expect(await reasonFor({ description: (d) => ({ ...d, attestationSecurityLevel: 0, keyMintSecurityLevel: 0 }) }, { acceptAnyRoot: true })).toBe(
       'security_level',

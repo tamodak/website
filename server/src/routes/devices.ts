@@ -81,7 +81,7 @@ export const deviceRoutes: FastifyPluginAsyncTypebox<DeviceRouteDeps> = async (a
         });
       } catch (error) {
         if (error instanceof AttestationError) {
-          request.log.info({ reason: error.reason }, 'attestation rejected');
+          request.log.info({ reason: error.reason, detail: error.message }, 'attestation rejected');
           throw attestationRejected(error.reason);
         }
         throw error;

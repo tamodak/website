@@ -139,9 +139,11 @@ export function verifyAttestationChain(chainDer: readonly Uint8Array[], policy: 
 
   // Validity of the certificates between leaf and root. The leaf's dates are set by the phone
   // itself, so Google doesn't check them; expired factory certificates stay valid because
-  // factory keys can't be rotated.
+  // factory keys can't be rotated. A development chain that doesn't end in a Google root proves
+  // nothing whatever its dates say, and older emulator images ship software-attestation
+  // certificates that have since expired, so its dates aren't checked.
   const factoryProvisioned = hasSerialNumberAttribute(chain[chain.length - 2]!.pkijs);
-  for (let i = 1; i < chain.length - 1; i++) {
+  for (let i = 1; i < chain.length - 1 && !untrustedRoot; i++) {
     const certificate = chain[i]!.node;
     if (policy.now < certificate.validFromDate) throw new AttestationError('chain_invalid', 'a certificate is not valid yet');
     if (policy.now > certificate.validToDate && !factoryProvisioned) throw new AttestationError('chain_invalid', 'a certificate has expired');
