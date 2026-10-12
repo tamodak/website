@@ -48,6 +48,9 @@ COPY server/package.json server/
 RUN pnpm install --frozen-lockfile
 COPY protocol/ protocol/
 COPY server/ server/
+# deploy writes a self-contained copy of the server with production dependencies only. pnpm
+# names this mode --legacy; its other mode needs the workspace to inject (copy) the protocol
+# package, which would make local tests run a copy instead of the live sources.
 RUN pnpm --filter @tamodak/server build \
  && pnpm --filter @tamodak/server deploy --legacy --prod /out
 
