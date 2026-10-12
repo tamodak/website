@@ -15,7 +15,8 @@ export interface DevicesTable {
   sign_pk: ColumnType<Buffer, Uint8Array, never>;
   security_level: number;
   attestation: ColumnType<AttestationSummary, string, string>;
-  fcm_token: string | null;
+  /** The Firebase Installation ID FCM reaches the phone by (SPEC.md §9), once it sent one. */
+  fcm_fid: string | null;
   created_at: Defaulted<Date>;
   last_seen_on: ColumnType<string, string | undefined, string>;
 }

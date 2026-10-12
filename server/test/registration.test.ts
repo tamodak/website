@@ -153,18 +153,18 @@ describe('POST /v1/devices', () => {
 });
 
 describe('the phone\'s own record', () => {
-  it('stores, replaces and clears the push token', async () => {
+  it('stores, replaces and clears the push FID', async () => {
     const client = await registeredPhone(server);
-    const token = async () =>
-      (await server.db.selectFrom('devices').select('fcm_token').where('fingerprint', '=', Buffer.from(client.phone.fp)).executeTakeFirstOrThrow())
-        .fcm_token;
-    expect((await client.call('PUT', '/v1/devices/me/push', { fcmToken: 'token-1' })).status).toBe(204);
-    expect(await token()).toBe('token-1');
-    await client.call('PUT', '/v1/devices/me/push', { fcmToken: 'token-2' });
-    expect(await token()).toBe('token-2');
+    const fid = async () =>
+      (await server.db.selectFrom('devices').select('fcm_fid').where('fingerprint', '=', Buffer.from(client.phone.fp)).executeTakeFirstOrThrow())
+        .fcm_fid;
+    expect((await client.call('PUT', '/v1/devices/me/push', { fid: 'fid-1' })).status).toBe(204);
+    expect(await fid()).toBe('fid-1');
+    await client.call('PUT', '/v1/devices/me/push', { fid: 'fid-2' });
+    expect(await fid()).toBe('fid-2');
     expect((await client.call('DELETE', '/v1/devices/me/push')).status).toBe(204);
-    expect(await token()).toBeNull();
-    expect((await client.call('PUT', '/v1/devices/me/push', { fcmToken: '' })).status).toBe(400);
+    expect(await fid()).toBeNull();
+    expect((await client.call('PUT', '/v1/devices/me/push', { fid: '' })).status).toBe(400);
   });
 
   it('deletes the phone, after which its key no longer authenticates', async () => {

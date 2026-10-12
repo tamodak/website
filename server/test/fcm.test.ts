@@ -113,13 +113,13 @@ const fcmError = (status: string, errorCode?: string, extra: object[] = []) => (
 describe('sending', () => {
   it('sends the content-free sync message with a token from a valid JWT, and reuses the token', async () => {
     const fcm = client();
-    expect(await fcm.send('device-token')).toEqual({ ok: true });
-    expect(await fcm.send('device-token')).toEqual({ ok: true });
+    expect(await fcm.send('device-fid')).toEqual({ ok: true });
+    expect(await fcm.send('device-fid')).toEqual({ ok: true });
     expect(tokenRequests).toBe(1);
-    expect(sendRequests[0]).toEqual({ authorization: 'Bearer access-1', body: FcmClient.syncMessage('device-token') });
-    expect(FcmClient.syncMessage('t')).toEqual({
+    expect(sendRequests[0]).toEqual({ authorization: 'Bearer access-1', body: FcmClient.syncMessage('device-fid') });
+    expect(FcmClient.syncMessage('f')).toEqual({
       message: {
-        token: 't',
+        fid: 'f',
         data: { sync: '1' },
         android: { priority: 'HIGH', collapse_key: 'sync', ttl: '86400s', restricted_package_name: 'org.tamodak.killit' },
       },
@@ -129,12 +129,12 @@ describe('sending', () => {
   it('fetches a new token shortly before the old one expires', async () => {
     let now = Date.now();
     const fcm = client(() => now);
-    await fcm.send('t');
+    await fcm.send('f');
     now += 3599_000 - 5 * 60_000 - 1000;
-    await fcm.send('t');
+    await fcm.send('f');
     expect(tokenRequests).toBe(1);
     now += 2000;
-    await fcm.send('t');
+    await fcm.send('f');
     expect(tokenRequests).toBe(2);
   });
 
@@ -153,31 +153,31 @@ describe('sending', () => {
       }
       return { status: 200, body: {} };
     };
-    expect(await client().send('t')).toEqual({ ok: true });
+    expect(await client().send('f')).toEqual({ ok: true });
     expect(tokenRequests).toBe(2);
   });
 
   it('refuses to follow a redirect', async () => {
-    await expect(client(undefined, '/redirect').send('t')).rejects.toThrow();
+    await expect(client(undefined, '/redirect').send('f')).rejects.toThrow();
   });
 });
 
 describe('error handling', () => {
   it.each([
-    ['UNREGISTERED', 404, fcmError('NOT_FOUND', 'UNREGISTERED'), { ok: false, kind: 'token_invalid' }],
-    ['SENDER_ID_MISMATCH', 403, fcmError('PERMISSION_DENIED', 'SENDER_ID_MISMATCH'), { ok: false, kind: 'token_invalid' }],
+    ['UNREGISTERED', 404, fcmError('NOT_FOUND', 'UNREGISTERED'), { ok: false, kind: 'fid_invalid' }],
+    ['SENDER_ID_MISMATCH', 403, fcmError('PERMISSION_DENIED', 'SENDER_ID_MISMATCH'), { ok: false, kind: 'fid_invalid' }],
     [
-      'an invalid token',
+      'an invalid FID',
       400,
-      fcmError('INVALID_ARGUMENT', 'INVALID_ARGUMENT', [{ '@type': 'type.googleapis.com/google.rpc.BadRequest', fieldViolations: [{ field: 'message.token' }] }]),
-      { ok: false, kind: 'token_invalid' },
+      fcmError('INVALID_ARGUMENT', 'INVALID_ARGUMENT', [{ '@type': 'type.googleapis.com/google.rpc.BadRequest', fieldViolations: [{ field: 'message.fid' }] }]),
+      { ok: false, kind: 'fid_invalid' },
     ],
     ['any other invalid argument', 400, fcmError('INVALID_ARGUMENT', 'INVALID_ARGUMENT'), { ok: false, kind: 'error', status: 400, code: 'INVALID_ARGUMENT' }],
     ['QUOTA_EXCEEDED', 429, fcmError('RESOURCE_EXHAUSTED', 'QUOTA_EXCEEDED'), { ok: false, kind: 'retry', retryAfterSeconds: null }],
     ['UNAVAILABLE', 503, fcmError('UNAVAILABLE', 'UNAVAILABLE'), { ok: false, kind: 'retry', retryAfterSeconds: null }],
   ])('treats %s as %j', async (_, status, body, expected) => {
     sendBehaviour = () => ({ status, body });
-    expect(await client().send('t')).toEqual(expected);
+    expect(await client().send('f')).toEqual(expected);
   });
 
   it('honours Retry-After', () => {

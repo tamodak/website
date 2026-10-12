@@ -36,7 +36,7 @@ describe('signed requests', () => {
   });
 
   it('cover the exact body bytes', async () => {
-    const signedBody = new TextEncoder().encode('{"fcmToken":"a"}');
+    const signedBody = new TextEncoder().encode('{"fid":"a"}');
     const response = await phone.call('PUT', '/v1/devices/me/push', undefined, {
       rawBody: signedBody,
       // Same JSON meaning, different bytes than were signed.
@@ -46,7 +46,7 @@ describe('signed requests', () => {
     const respaced = await fetch(`${server.url}/v1/devices/me/push`, {
       method: 'PUT',
       headers: { ...(await signedHeaders(signedBody)), 'content-type': 'application/json' },
-      body: '{ "fcmToken": "a" }',
+      body: '{ "fid": "a" }',
     });
     expect(respaced.status).toBe(401);
   });
@@ -89,7 +89,7 @@ describe('errors', () => {
   });
 
   it('answer a body over the route limit with 413', async () => {
-    const big = { fcmToken: 'x'.repeat(20_000) };
+    const big = { fid: 'x'.repeat(20_000) };
     expect((await phone.call('PUT', '/v1/devices/me/push', big)).status).toBe(413);
   });
 

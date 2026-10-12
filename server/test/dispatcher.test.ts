@@ -33,15 +33,15 @@ class FakeSender implements PushSender {
 const quiet = { info: () => {}, warn: () => {} };
 const sleep = (millis: number) => new Promise((resolve) => setTimeout(resolve, millis));
 
-async function phoneWithToken(token: string): Promise<{ client: PhoneClient; id: string }> {
+async function phoneWithFid(fid: string): Promise<{ client: PhoneClient; id: string }> {
   const client = await registeredPhone(server);
-  await client.call('PUT', '/v1/devices/me/push', { fcmToken: token });
+  await client.call('PUT', '/v1/devices/me/push', { fid });
   const row = await server.db.selectFrom('devices').select('id').where('fingerprint', '=', Buffer.from(client.phone.fp)).executeTakeFirstOrThrow();
   return { client, id: row.id };
 }
 
-async function tokenOf(id: string): Promise<string | null> {
-  return (await server.db.selectFrom('devices').select('fcm_token').where('id', '=', id).executeTakeFirstOrThrow()).fcm_token;
+async function fidOf(id: string): Promise<string | null> {
+  return (await server.db.selectFrom('devices').select('fcm_fid').where('id', '=', id).executeTakeFirstOrThrow()).fcm_fid;
 }
 
 async function until(condition: () => boolean, timeoutMillis = 3000): Promise<void> {
@@ -56,7 +56,7 @@ describe('PushDispatcher', () => {
   it('turns a burst of requests into one push, then waits its interval before the next', async () => {
     const sender = new FakeSender();
     const dispatcher = new PushDispatcher({ db: server.db, sender, log: quiet, minIntervalMillis: 300 });
-    const { id } = await phoneWithToken('token-burst');
+    const { id } = await phoneWithFid('fid-burst');
     for (let i = 0; i < 5; i++) dispatcher.schedule(id);
     await until(() => sender.sent.length === 1);
     dispatcher.schedule(id);
@@ -66,35 +66,35 @@ describe('PushDispatcher', () => {
     dispatcher.stop();
   });
 
-  it('forgets a token FCM says is dead', async () => {
+  it('forgets an FID FCM says is unregistered', async () => {
     const sender = new FakeSender();
     const dispatcher = new PushDispatcher({ db: server.db, sender, log: quiet, minIntervalMillis: 10 });
-    const { id } = await phoneWithToken('token-dead');
-    sender.results.push({ ok: false, kind: 'token_invalid' });
+    const { id } = await phoneWithFid('fid-dead');
+    sender.results.push({ ok: false, kind: 'fid_invalid' });
     dispatcher.schedule(id);
     await until(() => sender.sent.length === 1 && dispatcher.pending === 0);
-    expect(await tokenOf(id)).toBeNull();
+    expect(await fidOf(id)).toBeNull();
     dispatcher.stop();
   });
 
-  it('keeps a token the phone registered while the dead one was being tried', async () => {
+  it('keeps an FID the phone registered while the dead one was being tried', async () => {
     const sender = new FakeSender();
     const dispatcher = new PushDispatcher({ db: server.db, sender, log: quiet, minIntervalMillis: 10 });
-    const { client, id } = await phoneWithToken('token-old');
-    sender.results.push({ ok: false, kind: 'token_invalid' });
+    const { client, id } = await phoneWithFid('fid-old');
+    sender.results.push({ ok: false, kind: 'fid_invalid' });
     sender.during = async () => {
-      await client.call('PUT', '/v1/devices/me/push', { fcmToken: 'token-new' });
+      await client.call('PUT', '/v1/devices/me/push', { fid: 'fid-new' });
     };
     dispatcher.schedule(id);
     await until(() => sender.sent.length === 1 && dispatcher.pending === 0);
-    expect(await tokenOf(id)).toBe('token-new');
+    expect(await fidOf(id)).toBe('fid-new');
     dispatcher.stop();
   });
 
   it('retries when FCM asks, then gives up', async () => {
     const sender = new FakeSender();
     const dispatcher = new PushDispatcher({ db: server.db, sender, log: quiet, minIntervalMillis: 10, retryBaseMillis: 20, maxAttempts: 3 });
-    const { id } = await phoneWithToken('token-retry');
+    const { id } = await phoneWithFid('fid-retry');
     sender.results.push(
       { ok: false, kind: 'retry', retryAfterSeconds: null },
       { ok: false, kind: 'retry', retryAfterSeconds: null },

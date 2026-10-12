@@ -131,16 +131,16 @@ export const deviceRoutes: FastifyPluginAsyncTypebox<DeviceRouteDeps> = async (a
 
   app.put(
     '/devices/me/push',
-    { schema: { body: StrictObject({ fcmToken: Type.String({ minLength: 1, maxLength: 4096, pattern: '^[\\x21-\\x7e]+$' }) }) } },
+    { schema: { body: StrictObject({ fid: Type.String({ minLength: 1, maxLength: 4096, pattern: '^[\\x21-\\x7e]+$' }) }) } },
     async (request, reply) => {
       const device = deviceOf(request);
-      await db.updateTable('devices').set({ fcm_token: request.body.fcmToken }).where('id', '=', device.id).execute();
+      await db.updateTable('devices').set({ fcm_fid: request.body.fid }).where('id', '=', device.id).execute();
       return reply.status(204).send();
     },
   );
 
   app.delete('/devices/me/push', async (request, reply) => {
-    await db.updateTable('devices').set({ fcm_token: null }).where('id', '=', deviceOf(request).id).execute();
+    await db.updateTable('devices').set({ fcm_fid: null }).where('id', '=', deviceOf(request).id).execute();
     return reply.status(204).send();
   });
 

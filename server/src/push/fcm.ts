@@ -56,8 +56,8 @@ export function loadServiceAccount(path: string): ServiceAccount {
 /** The outcome of one send, as the dispatcher needs to act on it. */
 export type SendResult =
   | { readonly ok: true }
-  /** The token is dead (uninstalled, rotated, another project's): forget it. */
-  | { readonly ok: false; readonly kind: 'token_invalid' }
+  /** The FID is no longer registered (uninstalled, reset, another project's): forget it. */
+  | { readonly ok: false; readonly kind: 'fid_invalid' }
   /** FCM is overloaded or rate-limiting: try again later. */
   | { readonly ok: false; readonly kind: 'retry'; readonly retryAfterSeconds: number | null }
   /** Anything else; logged, not retried. */
@@ -93,22 +93,25 @@ export class FcmClient {
     };
   }
 
-  /** Sends the content-free "sync" push to one registration token. */
-  async send(registrationToken: string): Promise<SendResult> {
-    let result = await this.post(registrationToken);
+  /** Sends the content-free "sync" push to one phone, by its Firebase Installation ID. */
+  async send(fid: string): Promise<SendResult> {
+    let result = await this.post(fid);
     if (result === 'unauthorized') {
       // The cached access token was revoked or expired early: fetch a new one once.
       this.cached = null;
-      result = await this.post(registrationToken);
+      result = await this.post(fid);
     }
     return result === 'unauthorized' ? { ok: false, kind: 'error', status: 401, code: 'UNAUTHENTICATED' } : result;
   }
 
-  /** The message body (SPEC.md §9). Nothing in it depends on what the phone has received. */
-  static syncMessage(registrationToken: string): unknown {
+  /**
+   * The message body (SPEC.md §9). Nothing in it depends on what the phone has received. The phone
+   * is named by `fid`: FCM has deprecated `token` since registrations moved to installation IDs.
+   */
+  static syncMessage(fid: string): unknown {
     return {
       message: {
-        token: registrationToken,
+        fid,
         data: { sync: '1' },
         android: {
           priority: 'HIGH',
@@ -120,12 +123,12 @@ export class FcmClient {
     };
   }
 
-  private async post(registrationToken: string): Promise<SendResult | 'unauthorized'> {
+  private async post(fid: string): Promise<SendResult | 'unauthorized'> {
     const accessToken = await this.accessToken();
     const response = await this.fetch(this.endpoints.send, {
       method: 'POST',
       headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify(FcmClient.syncMessage(registrationToken)),
+      body: JSON.stringify(FcmClient.syncMessage(fid)),
       redirect: 'error',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MILLIS),
     });
@@ -191,23 +194,23 @@ async function readJson(response: Response): Promise<unknown> {
 /**
  * Maps an FCM error to what the dispatcher should do, following the v1 `ErrorCode` reference.
  *
- * A token is only forgotten when FCM blames the token itself: `UNREGISTERED`, `SENDER_ID_MISMATCH`,
- * or an `INVALID_ARGUMENT` whose violation names `message.token`. Any other invalid argument would
- * be a bug in our fixed message, and must not wipe every phone's token.
+ * An FID is only forgotten when FCM blames the FID itself: `UNREGISTERED`, `SENDER_ID_MISMATCH`, or
+ * an `INVALID_ARGUMENT` whose violation names `message.fid`. Any other invalid argument would be a
+ * bug in our fixed message, and must not wipe every phone's registration.
  */
 export function classifyError(status: number, retryAfterHeader: string | null, body: unknown): SendResult {
   const error = (body as { error?: { status?: unknown; details?: unknown } } | null)?.error;
   const details = Array.isArray(error?.details) ? (error.details as Record<string, unknown>[]) : [];
   const fcmCode = details.find((detail) => typeof detail['errorCode'] === 'string')?.['errorCode'] as string | undefined;
   const code = fcmCode ?? (typeof error?.status === 'string' ? error.status : null);
-  const tokenViolation = details.some(
+  const fidViolation = details.some(
     (detail) =>
       Array.isArray(detail['fieldViolations']) &&
-      (detail['fieldViolations'] as { field?: unknown }[]).some((violation) => violation.field === 'message.token'),
+      (detail['fieldViolations'] as { field?: unknown }[]).some((violation) => violation.field === 'message.fid'),
   );
 
-  if (code === 'UNREGISTERED' || code === 'SENDER_ID_MISMATCH' || status === 404) return { ok: false, kind: 'token_invalid' };
-  if (code === 'INVALID_ARGUMENT' && tokenViolation) return { ok: false, kind: 'token_invalid' };
+  if (code === 'UNREGISTERED' || code === 'SENDER_ID_MISMATCH' || status === 404) return { ok: false, kind: 'fid_invalid' };
+  if (code === 'INVALID_ARGUMENT' && fidViolation) return { ok: false, kind: 'fid_invalid' };
   if (status === 429 || status === 500 || status === 503 || code === 'QUOTA_EXCEEDED' || code === 'UNAVAILABLE' || code === 'INTERNAL') {
     const seconds = retryAfterHeader !== null && /^[0-9]{1,6}$/.test(retryAfterHeader) ? Number(retryAfterHeader) : null;
     return { ok: false, kind: 'retry', retryAfterSeconds: seconds };

@@ -1,6 +1,6 @@
 /**
  * Decides when to push (SPEC.md §9): at most one "sync" every 10 seconds per phone, retries with
- * backoff when FCM asks for it, and forgets tokens FCM says are dead.
+ * backoff when FCM asks for it, and forgets registrations FCM says are dead.
  *
  * Push is only a wake-up. Everything it signals is already safe in the mailbox, so a push that
  * never arrives costs a delay until the next app open or WorkManager poll, never a message.
@@ -11,7 +11,7 @@ import type { SendResult } from './fcm.ts';
 
 /** What the dispatcher needs from an FCM client; tests substitute a fake. */
 export interface PushSender {
-  send(registrationToken: string): Promise<SendResult>;
+  send(fid: string): Promise<SendResult>;
 }
 
 export interface PushLog {
@@ -94,15 +94,15 @@ export class PushDispatcher {
   private async deliver(deviceId: string, state: DeviceState): Promise<void> {
     state.inFlight = true;
     state.again = false;
-    let result: SendResult | 'no_token';
+    let result: SendResult | 'no_fid';
     try {
-      const row = await this.options.db.selectFrom('devices').select('fcm_token').where('id', '=', deviceId).executeTakeFirst();
-      const token = row?.fcm_token ?? null;
-      result = token === null ? 'no_token' : await this.options.sender!.send(token);
-      if (result !== 'no_token' && !result.ok && result.kind === 'token_invalid' && token !== null) {
-        // Only the token that failed: the phone may have registered a new one meanwhile.
-        await this.options.db.updateTable('devices').set({ fcm_token: null }).where('id', '=', deviceId).where('fcm_token', '=', token).execute();
-        this.options.log.info('push: forgot a token FCM reported as invalid');
+      const row = await this.options.db.selectFrom('devices').select('fcm_fid').where('id', '=', deviceId).executeTakeFirst();
+      const fid = row?.fcm_fid ?? null;
+      result = fid === null ? 'no_fid' : await this.options.sender!.send(fid);
+      if (result !== 'no_fid' && !result.ok && result.kind === 'fid_invalid' && fid !== null) {
+        // Only the id that failed: the phone may have registered a new one meanwhile.
+        await this.options.db.updateTable('devices').set({ fcm_fid: null }).where('id', '=', deviceId).where('fcm_fid', '=', fid).execute();
+        this.options.log.info('push: forgot an FID FCM reported as unregistered');
       }
     } catch (error) {
       result = { ok: false, kind: 'retry', retryAfterSeconds: null };
@@ -111,7 +111,7 @@ export class PushDispatcher {
     state.inFlight = false;
     state.lastSentAt = this.options.now();
 
-    if (result !== 'no_token' && !result.ok && result.kind === 'retry' && !this.stopped) {
+    if (result !== 'no_fid' && !result.ok && result.kind === 'retry' && !this.stopped) {
       state.attempt++;
       if (state.attempt < this.options.maxAttempts) {
         // FCM asks for exponential backoff; quota errors want at least a minute.
@@ -121,7 +121,7 @@ export class PushDispatcher {
         return;
       }
       this.options.log.warn('push: giving up after repeated FCM errors; the mailbox still holds the message');
-    } else if (result !== 'no_token' && !result.ok && result.kind === 'error') {
+    } else if (result !== 'no_fid' && !result.ok && result.kind === 'error') {
       this.options.log.warn(`push: FCM refused a send (HTTP ${result.status}, ${result.code ?? 'no code'})`);
     }
     state.attempt = 0;

@@ -226,7 +226,7 @@ The trust anchors are Google's attestation roots, as published on developer.andr
 | Call | Result |
 |---|---|
 | `GET /v1/devices/me` | `200 { "device", "securityLevel" }` |
-| `PUT /v1/devices/me/push` `{ "fcmToken": string }` (1–4096 characters) | `204` |
+| `PUT /v1/devices/me/push` `{ "fid": string }` (1–4096 printable ASCII characters): the Firebase Installation ID FCM reaches the phone by (§9) | `204` |
 | `DELETE /v1/devices/me/push` | `204` |
 | `DELETE /v1/devices/me` | `204`. Deletes the device, its links, its invites and its mailbox. Messages it already sent stay in their recipients' mailboxes, so a goodbye NOTICE still arrives. |
 
@@ -320,13 +320,14 @@ Before showing the code, each phone checks that the peer's `encSig` verifies and
 After storing messages for a phone, the server sends that phone one FCM data message. Several messages arriving close together produce one push (at most one every 10 seconds per phone).
 
 ```json
-{ "message": { "token": "<FCM registration token>", "data": { "sync": "1" },
+{ "message": { "fid": "<Firebase Installation ID>", "data": { "sync": "1" },
   "android": { "priority": "HIGH", "collapse_key": "sync", "ttl": "86400s",
                "restricted_package_name": "org.tamodak.killit" } } }
 ```
 
+- **A phone is addressed by its Firebase Installation ID.** firebase-messaging 26 registers apps by FID and hands it to `onRegistered`; FCM has deprecated the message's `token` field in favour of `fid`. Killit sends the FID with `PUT /v1/devices/me/push` once it has a pairing, and again whenever FCM registers it anew.
 - **A push carries no content.** Killit treats every push, whatever it holds, as "fetch the mailbox now" (PLAN.md §6.2 rule 6). So a forged or replayed push, even one sent with a stolen FCM credential, can at most make phones poll.
-- **Token cleanup.** `UNREGISTERED` (404), or `INVALID_ARGUMENT` about the token, deletes the token. `QUOTA_EXCEEDED`, `UNAVAILABLE` and `INTERNAL` are retried with exponential backoff, honouring `Retry-After`. A push that never arrives only delays things: the message waits in the mailbox until the next app open or WorkManager poll (PLAN.md §7).
+- **Registration cleanup.** `UNREGISTERED` (404), `SENDER_ID_MISMATCH`, or `INVALID_ARGUMENT` about `message.fid`, deletes the FID. `QUOTA_EXCEEDED`, `UNAVAILABLE` and `INTERNAL` are retried with exponential backoff, honouring `Retry-After`. A push that never arrives only delays things: the message waits in the mailbox until the next app open or WorkManager poll (PLAN.md §7).
 - **Authentication** uses the FCM HTTP v1 API directly. The server signs a service-account JWT (RS256, scope `https://www.googleapis.com/auth/firebase.messaging`) with `node:crypto`, exchanges it at the account's `token_uri` for an access token, and caches the token until five minutes before it expires. There's no Firebase SDK: one documented HTTPS call doesn't justify about 60 more packages that could reach the credential (Phase 3 decision). TLS certificates are verified and redirects are refused.
 
 ---
@@ -541,7 +542,7 @@ Notices only inform. An unknown code shows as "Update Killit to see this" (E-F1)
 
 | Table | Holds | Kept until |
 |---|---|---|
-| `devices` | fingerprint, `signPk`, security level and the attestation summary (§5.2), FCM token, creation time, the date last seen | `DELETE /v1/devices/me` |
+| `devices` | fingerprint, `signPk`, security level and the attestation summary (§5.2), FCM installation ID, creation time, the date last seen | `DELETE /v1/devices/me` |
 | `attestation_challenges` | the challenge | used, or 10 minutes |
 | `seen_nonces` | device and nonce | 10 minutes |
 | `invites` | code HMAC, creator, joiner, commitment, reveals, confirmations, state | 1 hour after finishing or expiring |

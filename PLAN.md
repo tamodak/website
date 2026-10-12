@@ -439,7 +439,7 @@ A slave **can't open its own Killit** while the server is unreachable, and can't
 | `POST /v1/register/challenge` | Get a nonce for key attestation (unsigned) |
 | `POST /v1/devices` | Register: the attestation chain, signed with the new key itself |
 | `GET /v1/devices/me` | The phone's own record |
-| `PUT` / `DELETE /v1/devices/me/push` | Set or clear the FCM token |
+| `PUT` / `DELETE /v1/devices/me/push` | Set or clear the FCM installation ID |
 | `DELETE /v1/devices/me` | Delete the device and all its data |
 | `POST /v1/invites` | Create a pairing invite: the code and its expiry |
 | `POST /v1/invites/join` | Join by code, uploading B's commitment |
@@ -455,7 +455,7 @@ A slave **can't open its own Killit** while the server is unreachable, and can't
 
 ### 8.2 Schema (Postgres)
 
-`server/migrations/` holds it. It has six tables: `devices` (fingerprint, attested key, security level, attestation summary, FCM token, the *date* last seen), `attestation_challenges`, `seen_nonces`, `invites` (code HMAC, participants, commitment, reveals, confirmations), `links` (one row per pair of phones), and `messages` (sender fingerprint, recipient, the 8240-byte envelope).
+`server/migrations/` holds it. It has six tables: `devices` (fingerprint, attested key, security level, attestation summary, FCM installation ID, the *date* last seen), `attestation_challenges`, `seen_nonces`, `invites` (code HMAC, participants, commitment, reveals, confirmations), `links` (one row per pair of phones), and `messages` (sender fingerprint, recipient, the 8240-byte envelope).
 
 - There's **no `kind` column**, no role, and no encryption key: the server can't know them.
 - Unacknowledged messages stay until they're acknowledged, since requests have no expiry. A cap per recipient and per sender, and a per-device rate limit, stop abuse.
