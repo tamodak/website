@@ -187,13 +187,17 @@ status and duration. No bodies, codes, tokens or IP addresses are logged, and Do
 Until this is done the API runs without push. Phones then learn of new messages when Killit
 opens or polls (PLAN.md §7).
 
-1. Create a Firebase project and add an Android app with the package name `org.tamodak.killit`.
-   Phase 4 needs its `google-services.json`.
+1. The Firebase project is **`killit-27b49`**, with the Android app `org.tamodak.killit`. Its
+   `google-services.json` is committed in the Killit repository (`app/google-services.json`). The
+   server's key must come from this same project: FCM refuses a push whose sender is another
+   project's (`SENDER_ID_MISMATCH`).
 2. In the Google Cloud console for that project, make sure the **Firebase Cloud Messaging API (V1)**
-   is enabled.
+   is enabled. Under APIs & Services → Credentials, restrict the app's Android API key to the
+   package `org.tamodak.killit` and its signing certificates' SHA-1.
 3. Under IAM & Admin → Service accounts, create a service account `killit-push` with only the role
-   **Firebase Cloud Messaging API Admin**. Firebase's default "Admin SDK" account can do much more,
-   so don't use it. Then use Keys → Add key → JSON.
+   **Firebase Cloud Messaging API Admin**. Firebase's default "Admin SDK" account
+   (`firebase-adminsdk-…`) can do much more, so don't install its key on a server. Then use
+   Keys → Add key → JSON.
 4. Install the key and switch push on:
 
    ```bash

@@ -13,7 +13,8 @@ CREATE TABLE devices (
   security_level smallint    NOT NULL CHECK (security_level BETWEEN 0 AND 2),
   -- The attestation summary of SPEC.md §5.2, kept to understand the fleet. Never used to reject.
   attestation    jsonb       NOT NULL,
-  fcm_token      text        CHECK (octet_length(fcm_token) BETWEEN 1 AND 4096),
+  -- The Firebase Installation ID FCM reaches the phone by (SPEC.md §9), once it sent one.
+  fcm_fid        text        CHECK (octet_length(fcm_fid) BETWEEN 1 AND 4096),
   created_at     timestamptz NOT NULL DEFAULT now(),
   -- Only the day, so "last seen" stays coarse even in a database dump (PLAN.md §3.11).
   last_seen_on   date        NOT NULL DEFAULT current_date
