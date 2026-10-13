@@ -99,9 +99,11 @@ function phone(name: string): P.TestPhone {
 const A = phone('A');
 const B = phone('B');
 const C = phone('C');
-// D is A's new phone: the move vectors hand A's pairing with B over to it.
+// D is A's new phone: the move vectors hand A's pairing with B over to it. E is a spare new phone
+// for implementations' own move tests.
 const D = phone('D');
-const phones = [A, B, C, D];
+const E = phone('E');
+const phones = [A, B, C, D, E];
 
 write('identities.json', {
   description:

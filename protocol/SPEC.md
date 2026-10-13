@@ -640,7 +640,7 @@ body = bundle    newBundle (162)    the phone that takes this side of the pairin
 
 The old phone of a move sends one HANDOVER for each of its pairings. It is signed with the old phone's key, which its pair already trusts, and that signature is what vouches for the new key (PLAN.md §3.10). The receiver checks that `newBundle`'s encSig verifies and that the new fingerprint is neither its own nor the sender's. From then on the pairing named in the header belongs to `fp(newBundle.signPk)`: its signing key, encryption key and device model are replaced, and everything else stays, the pair id, names and counters included. The new fingerprint's badge is different, as it should be (PLAN.md §3.2).
 
-A protected receiver sends its open requests again, to the new phone, wherever the moving guardian hadn't decided yet. It also tells its other guardians, with NOTICE GUARDIAN_MOVED (B6). A HANDOVER is never answered.
+A protected receiver sends its open requests again, to the new phone, wherever the moving guardian hadn't decided yet, and forgets that pairing's MANAGE sequence numbers (§11.11): they counted the old phone's commands, whose key it no longer trusts, and the new phone counts afresh. It also tells its other guardians, with NOTICE GUARDIAN_MOVED (B6). A HANDOVER is never answered.
 
 ### 11.14 Moving to a new phone
 
