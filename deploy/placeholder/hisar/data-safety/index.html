@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hisar data safety</title>
+<meta name="description" content="Hisar's Google Play data safety answers, and what happens to each type of data in the Hisar browser.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="doc">
+  <p class="crumbs"><a href="/">tamodak</a> / Hisar</p>
+  <h1>Hisar data safety</h1>
+  <p class="updated">Last updated 13 October 2026</p>
+
+  <p>Hisar's Data safety section on Google Play says:</p>
+  <ul>
+    <li><strong>No data collected</strong></li>
+    <li><strong>No data shared with third parties</strong></li>
+    <li><strong>Committed to follow the Play Families Policy</strong></li>
+  </ul>
+  <p>This page explains those answers and goes through each type of data, so you can check them
+  for yourself. The <a href="/hisar/privacy/">privacy policy</a> has the full details.</p>
+
+  <h2>Why “no data collected”</h2>
+  <p>Google counts data as collected when an app sends it off the phone, and as shared when it goes
+  on to someone else. Hisar sends nothing to tamodak, and tamodak runs no server for it. What Hisar
+  does send goes straight to services you use through it, and Google's rules don't count it as
+  collection or sharing:</p>
+  <ul>
+    <li><strong>Browsing the web.</strong> Pages you open, searches and translated pages go to those
+      websites, as in any browser. Google's rules exclude data sent while browsing the open web.</li>
+    <li><strong>Things you start yourself.</strong> Search suggestions send what you type in the
+      address bar to your search engine, and you can turn them off. Image search sends the one photo
+      you choose to Google Lens. Google's rules exclude transfers you start and expect.</li>
+  </ul>
+
+  <h2>Type by type</h2>
+  <dl>
+    <dt>Location</dt>
+    <dd>Not accessed. Hisar has no location permission, and websites that ask are refused.</dd>
+
+    <dt>Personal info</dt>
+    <dd>Name, email, address and phone number are never asked for. What you type into a website goes
+      only to that website.</dd>
+
+    <dt>Financial info</dt>
+    <dd>Not accessed. Payments you make on a website go only to that website.</dd>
+
+    <dt>Health, messages, contacts and calendar</dt>
+    <dd>Not accessed.</dd>
+
+    <dt>Photos and videos</dt>
+    <dd>Only the photo you take or choose for image search is sent, to Google Lens. Pictures on web
+      pages are judged by the picture filter on the phone and never uploaded.</dd>
+
+    <dt>Audio</dt>
+    <dd>Never recorded by Hisar. Voice search runs in your phone's own speech service, and Hisar
+      receives only the text.</dd>
+
+    <dt>Files</dt>
+    <dd>Downloads and offline pages are saved on the phone.</dd>
+
+    <dt>Web browsing history</dt>
+    <dd>Stays on the phone and is left out of backups. You can delete it with <em>Delete browsing
+      data</em>.</dd>
+
+    <dt>Searches and typed text</dt>
+    <dd>Searches go to your search engine (Google, Bing or DuckDuckGo). If suggestions are on, typed
+      text goes to it after a pause in typing. Text that contains a blocked word is never sent, and a
+      blocked search never leaves the phone.</dd>
+
+    <dt>Crash logs and diagnostics</dt>
+    <dd>Hisar sends none. Android itself may send crash reports to Google Play if you allowed that in
+      your phone's settings.</dd>
+
+    <dt>Device and advertising IDs</dt>
+    <dd>Not used. Hisar reads no advertising ID, IMEI, serial number or network identifiers.</dd>
+  </dl>
+
+  <h2>Permissions</h2>
+  <ul>
+    <li><strong>Internet</strong>: to load web pages.</li>
+    <li><strong>Storage</strong>, only on Android 9 and older: to save downloads.</li>
+  </ul>
+  <p>Hisar asks for nothing else. For image search it opens your camera app or the photo picker
+  instead of asking for camera or storage access.</p>
+
+  <h2>Security</h2>
+  <ul>
+    <li>Hisar's own connections (suggestions, image search, model downloads) use HTTPS, and the
+      picture filter's model files are checked against their SHA-256 checksums.</li>
+    <li>Your data stays in Hisar's private storage and is left out of Android backups and transfers
+      to a new phone. Uninstalling Hisar deletes it.</li>
+    <li>Hisar is open source. Its <a href="https://github.com/tamodak/Hisar">code</a> shows exactly
+      what it sends.</li>
+  </ul>
+
+  <h2>Contact</h2>
+  <p>tamodak — <a href="mailto:info@tamodak.org">info@tamodak.org</a></p>
+</main>
+</body>
+</html>

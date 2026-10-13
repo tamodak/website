@@ -12,3 +12,20 @@ li { padding: .9rem 0; border-bottom: 1px solid #27292c; color: #abaeb2; }
 a { color: #43b966; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 a:hover, a:focus-visible { color: #f3f5f8; }
 li a { font-weight: 600; }
+
+/* Long text pages (hisar/privacy, hisar/data-safety). */
+.doc { max-width: 40rem; }
+.doc .crumbs { margin-bottom: 1.5rem; font-size: .9rem; }
+.doc .updated { color: #8c8f93; font-size: .9rem; }
+.doc .summary { padding: 1rem; border: 1px solid #27292c; border-radius: 8px; }
+.doc strong { color: #f3f5f8; }
+.doc h2 { margin: 2.5rem 0 1rem; font-size: 1.35rem; }
+.doc h3 { margin: 1.75rem 0 .5rem; font-size: 1.05rem; color: #f3f5f8; }
+.doc ul { margin: 0 0 1rem; padding-left: 1.25rem; list-style: disc; border: 0; }
+.doc li { padding: .25rem 0; border: 0; }
+.doc li a { font-weight: inherit; }
+.doc dl { margin: 0 0 1rem; border-top: 1px solid #27292c; }
+.doc dt { padding-top: .9rem; font-weight: 600; color: #f3f5f8; }
+.doc dd { margin: .25rem 0 0; padding-bottom: .9rem; border-bottom: 1px solid #27292c; color: #bbbec1; }
+.doc .see-also { margin-top: 2.5rem; }
+li a.minor { font-weight: inherit; }
