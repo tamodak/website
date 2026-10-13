@@ -81,7 +81,9 @@ export async function startServer(env: Record<string, string> = {}): Promise<Tes
     RATE_ENVELOPES_PER_DEVICE_PER_HOUR: '100000',
     ...env,
   });
-  const dbHandle: Db = openDb(config.databaseUrl);
+  const dbHandle: Db = openDb(config.databaseUrl, (error) => {
+    if (process.env['TEST_LOG']) console.warn(`idle database connection closed: ${error.message}`);
+  });
   sharedRoot ??= createTestRoot();
   const root = await sharedRoot;
   const clock = new TestClock();

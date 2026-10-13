@@ -15,12 +15,13 @@ import { FcmClient, loadServiceAccount } from './push/fcm.ts';
 import { RateLimiter } from './rateLimiter.ts';
 
 const config = loadConfig();
-const database = openDb(config.databaseUrl);
 
 // The background pieces are built before the app, but should log through its logger once it
 // exists; until then (only during startup) they log to the console.
 let log: { info(message: string): void; warn(message: string): void } = console;
 const backgroundLog = { info: (message: string) => log.info(message), warn: (message: string) => log.warn(message) };
+
+const database = openDb(config.databaseUrl, (error) => backgroundLog.warn(`idle database connection closed: ${error.message}`));
 
 const limiter = new RateLimiter();
 const bus = new WakeBus();

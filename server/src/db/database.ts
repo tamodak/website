@@ -22,8 +22,13 @@ export interface Db {
  *
  * Statements time out after 10 seconds and idle transactions after 30, so a stuck query can't
  * pin a connection; long polls hold no connection while they wait.
+ *
+ * When the database ends a connection that sits idle in the pool (a restart, an administrator,
+ * a network partition), the pool drops it and reports the error to `onIdleError`, and the next
+ * query opens a new one. The listener is required: a pool that emits `error` with none attached
+ * throws it as uncaught, and the whole server exits.
  */
-export function openDb(connectionString: string, max = 10): Db {
+export function openDb(connectionString: string, onIdleError: (error: Error) => void, max = 10): Db {
   const pool = new pg.Pool({
     connectionString,
     max,
@@ -31,6 +36,7 @@ export function openDb(connectionString: string, max = 10): Db {
     idle_in_transaction_session_timeout: 30_000,
     application_name: 'killit-server',
   });
+  pool.on('error', onIdleError);
   const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
   return {
     db,
