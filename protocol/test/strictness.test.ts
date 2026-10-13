@@ -196,7 +196,126 @@ describe('message bodies', () => {
   });
 
   it('refuses an unknown kind', () => {
-    expect(P.decodeBody(0x30, new Uint8Array(0)).ok).toBe(false);
-    expect(P.isKnownKind(0x30)).toBe(false);
+    expect(P.decodeBody(0x39, new Uint8Array(0)).ok).toBe(false);
+    expect(P.isKnownKind(0x39)).toBe(false);
+  });
+
+  it('knows which kinds belong to a ceremony', () => {
+    const ceremonyKinds = Object.values(P.Kind).filter((kind) => P.isCeremonyKind(kind));
+    expect(ceremonyKinds).toEqual([P.Kind.PAIR_OFFER, P.Kind.PAIR_ANSWER, P.Kind.MOVE_REQUEST, P.Kind.MOVE_STATE, P.Kind.MOVE_ANSWER, P.Kind.MOVE_DONE]);
+  });
+
+  const longPackage = (i: number) => `a${String(i).padStart(3, '0')}${'b'.repeat(251)}`;
+  const header: P.MessageHeader = {
+    version: P.MESSAGE_VERSION,
+    kind: P.Kind.APP_LIST,
+    messageId: new Uint8Array(16),
+    pairId: new Uint8Array(32),
+    senderFp: new Uint8Array(32),
+    recipientFp: new Uint8Array(32),
+    createdAt: 0,
+  };
+
+  it('fits the largest GUARDIAN_UNBLOCK and the largest MANAGE inside one envelope', () => {
+    const relay: P.GuardianUnblock = {
+      kind: P.Kind.GUARDIAN_UNBLOCK,
+      requestId: new Uint8Array(16),
+      app: {
+        packageName: longPackage(0),
+        certDigest: new Uint8Array(32),
+        label: '\u{1F600}'.repeat(100),
+        installer: longPackage(1),
+        firstInstalled: 0,
+        icon: new Uint8Array(P.ICON_BYTES),
+      },
+      proposerFp: new Uint8Array(32),
+      proposerName: '\u{1F600}'.repeat(40),
+      guardianCount: 50,
+    };
+    expect(P.encodeBody(relay).length).toBeLessThanOrEqual(P.MAX_BODY_BYTES);
+    const manage: P.Manage = {
+      kind: P.Kind.MANAGE,
+      seq: Number.MAX_SAFE_INTEGER,
+      entries: Array.from({ length: P.MAX_MANAGE_APPS }, (_, i) => ({ packageName: longPackage(i), certDigest: new Uint8Array(32), desired: P.Desired.BLOCKED })),
+    };
+    expect(P.encodeBody(manage).length).toBeLessThanOrEqual(P.MAX_BODY_BYTES);
+  });
+
+  it('packs an app list into full pages, in package order, and gets it back', () => {
+    const icon = new Uint8Array(P.LIST_ICON_BYTES);
+    const apps: P.ListedApp[] = Array.from({ length: 40 }, (_, i) => ({
+      packageName: `org.example.app${String(39 - i).padStart(2, '0')}`,
+      certDigest: P.seeded(`app ${i}`),
+      label: `App ${i}`,
+      installer: 'com.android.vending',
+      firstInstalled: 1_790_000_000_000,
+      state: P.AppState.ALLOWED,
+      icon,
+    }));
+    const pages = P.pageAppList(P.seeded('list', 16), apps);
+    expect(pages.length).toBeGreaterThan(1);
+    // Every app is the same size, so a page is full when one more app of that size won't fit.
+    const extra: P.ListedApp = { ...apps[0]!, packageName: 'org.example.extra' };
+    for (const page of pages) {
+      expect(P.encodeBody(page).length).toBeLessThanOrEqual(P.MAX_BODY_BYTES);
+      if (page.page < pages.length - 1) {
+        expect(() => P.encodeInner(header, P.encodeBody({ ...page, apps: [...page.apps, extra] }))).toThrow(RangeError);
+      }
+    }
+    const decoded = pages.map((page) => {
+      const result = P.decodeBody(P.Kind.APP_LIST, P.encodeBody(page));
+      if (!result.ok) throw new Error(result.error);
+      return result.value as P.AppList;
+    });
+    const assembled = P.assembleAppList(decoded);
+    expect(assembled.state).toBe('complete');
+    if (assembled.state === 'complete') {
+      expect(assembled.value.map((app) => app.packageName)).toEqual(apps.map((app) => app.packageName).sort());
+    }
+  });
+
+  it('cuts an app list at 1000 apps', () => {
+    const apps: P.ListedApp[] = Array.from({ length: 1001 }, (_, i) => ({
+      packageName: `p${String(i).padStart(4, '0')}`,
+      certDigest: new Uint8Array(32),
+      label: '',
+      installer: '',
+      firstInstalled: 0,
+      state: P.AppState.ALLOWED,
+      icon: null,
+    }));
+    const pages = P.pageAppList(P.seeded('list', 16), apps);
+    expect(pages.reduce((total, page) => total + page.apps.length, 0)).toBe(P.MAX_LISTED_APPS);
+  });
+
+  it("packs a move's state into pages, pairings first, and gets it back", () => {
+    const b = P.testPhone('B');
+    const pairings: P.MovedPairing[] = Array.from({ length: 30 }, (_, i) => ({
+      pairId: P.seeded(`pairing ${i}`),
+      role: i % 2 === 0 ? P.Role.GUARDIAN : P.Role.PROTECTED,
+      peer: P.randomPhone().bundle,
+      peerName: 'Ali',
+      nickname: 'Ali — Samsung',
+      peerModel: 'samsung SM-S911B',
+      appManagement: i % 2 === 0,
+      unpairChances: i % 2 === 0 ? 0 : 3,
+      createdAt: 1_790_000_000_000,
+    }));
+    const apps: P.MovedApp[] = Array.from({ length: 200 }, (_, i) => ({
+      packageName: `org.example.app${i}`,
+      certDigest: P.seeded(`app ${i}`),
+      state: P.AppState.BLOCKED,
+      chancesLeft: 2,
+    }));
+    const state: P.MovedState = { moveId: P.seeded('move', 16), appManagement: true, protection: 0b11_1111, pairings, apps };
+    const pages = P.pageMoveState(state);
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages) expect(P.encodeBody(page).length).toBeLessThanOrEqual(P.MAX_BODY_BYTES);
+    const assembled = P.assembleMoveState(pages, P.testPhone('D').fp, b.fp);
+    expect(assembled.state).toBe('complete');
+    if (assembled.state === 'complete') {
+      expect(assembled.value.pairings.map((pairing) => P.toHex(pairing.pairId))).toEqual(pairings.map((pairing) => P.toHex(pairing.pairId)));
+      expect(assembled.value.apps.map((app) => app.packageName)).toEqual(apps.map((app) => app.packageName));
+    }
   });
 });

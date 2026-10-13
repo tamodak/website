@@ -99,7 +99,9 @@ function phone(name: string): P.TestPhone {
 const A = phone('A');
 const B = phone('B');
 const C = phone('C');
-const phones = [A, B, C];
+// D is A's new phone: the move vectors hand A's pairing with B over to it.
+const D = phone('D');
+const phones = [A, B, C, D];
 
 write('identities.json', {
   description:
@@ -395,9 +397,11 @@ function ceremony(creator: P.TestPhone, joiner: P.TestPhone): Ceremony {
   };
 }
 
-// A guards B, and so does C: the pairings the message vectors use.
+// A guards B, and so does C: the pairings the message vectors use. DA is the ceremony of A's
+// move to its new phone D, which D creates and A joins (SPEC.md §6.5).
 const AB = ceremony(A, B);
 const CB = ceremony(C, B);
+const DA = ceremony(D, A);
 
 const flippedNonce = AB.joinerReveal.slice();
 flippedNonce[flippedNonce.length - 1]! ^= 0x01;
@@ -413,9 +417,10 @@ assert(swappedEncKey.ok && !P.verifyBundle(swappedEncKey.value.bundle), 'encSig 
 
 write('ceremony.json', {
   description:
-    'The pairing ceremony (SPEC.md §6.3, §6.4). commit is over joinerReveal; transcript is ' +
-    'bundle_A ‖ bundle_B ‖ n_A ‖ n_B; safetyCode is shown as safetyCodeDisplay.',
-  ceremonies: [AB, CB].map((c) => ({
+    'The pairing ceremony (SPEC.md §6.3, §6.4), and the same ceremony for a move (§6.5): D-A is phone A moving to ' +
+    'phone D. commit is over joinerReveal; transcript is bundle_A ‖ bundle_B ‖ n_A ‖ n_B; safetyCode is shown as ' +
+    'safetyCodeDisplay.',
+  ceremonies: [AB, CB, DA].map((c) => ({
     creator: c.creator.name,
     joiner: c.joiner.name,
     creatorNonce: c.creatorNonce,
@@ -518,6 +523,86 @@ const unblockRequestId = P.seeded('request unblock TikTok', 16);
 const unlockRequestId = P.seeded('request unlock', 16);
 const unlockSession = P.seeded('unlock session nonce');
 const unpairRequestId = P.seeded('request unpair C', 16);
+
+/** A deterministic 16 × 16 RGBA test pattern for app lists, opaque; `seed` tints it. */
+function listIcon(seed: number): Uint8Array {
+  const pixels = new Uint8Array(P.LIST_ICON_BYTES);
+  for (let y = 0; y < P.LIST_ICON_SIDE; y++) {
+    for (let x = 0; x < P.LIST_ICON_SIDE; x++) {
+      const i = (y * P.LIST_ICON_SIDE + x) * 4;
+      pixels[i] = (x * 16 + seed) & 0xff;
+      pixels[i + 1] = y * 16;
+      pixels[i + 2] = (x + y) * 8;
+      pixels[i + 3] = 0xff;
+    }
+  }
+  return pixels;
+}
+
+const instagram: P.AppRef = { packageName: 'com.instagram.android', certDigest: P.seeded('Instagram signing certificate') };
+const whatsapp: P.AppRef = { packageName: 'com.whatsapp', certDigest: P.seeded('WhatsApp signing certificate') };
+const instagramInfo: P.AppInfo = { ...instagram, label: 'Instagram', installer: 'com.android.vending', firstInstalled: 1_789_000_000_000, icon: testIcon() };
+
+// B's app list, as two pages answering A's LIST_REQUEST. Split by hand: a sender fills each page as
+// far as it goes, but a receiver only checks the rules of SPEC.md §11.10.
+const listId = P.seeded('list request', 16);
+const listedInstagram: P.ListedApp = { ...instagram, label: 'Instagram', installer: 'com.android.vending', firstInstalled: 1_789_000_000_000, state: P.AppState.NEW, icon: listIcon(1) };
+const listedWhatsapp: P.ListedApp = { ...whatsapp, label: 'WhatsApp', installer: 'com.android.vending', firstInstalled: 1_700_000_000_000, state: P.AppState.ALLOWED, icon: null };
+const listedTiktok: P.ListedApp = { ...tiktok, label: 'TikTok', installer: '', firstInstalled: 1_789_990_000_000, state: P.AppState.BLOCKED, icon: listIcon(2) };
+const appListPage0: P.AppList = { kind: P.Kind.APP_LIST, listId, page: 0, pageCount: 2, apps: [listedInstagram, listedWhatsapp] };
+const appListPage1: P.AppList = { kind: P.Kind.APP_LIST, listId, page: 1, pageCount: 2, apps: [listedTiktok] };
+const emptyAppList: P.AppList = { kind: P.Kind.APP_LIST, listId: P.seeded('empty list request', 16), page: 0, pageCount: 1, apps: [] };
+
+const guardianUnblockRequestId = P.seeded('request guardian unblock Instagram', 16);
+
+// A moves to D (ceremony DA). As a phone that only guards, it hands over its pairing with B.
+const moveId = P.seeded('move A to D', 16);
+const movedAli: P.MovedPairing = {
+  pairId: AB.pairId,
+  role: P.Role.GUARDIAN,
+  peer: B.bundle,
+  peerName: 'Ali',
+  nickname: 'Ali — Samsung',
+  peerModel: 'samsung SM-S911B',
+  appManagement: true,
+  unpairChances: 0,
+  createdAt: 1_789_500_000_000,
+};
+const guardianMovePage: P.MoveState = {
+  kind: P.Kind.MOVE_STATE,
+  moveId,
+  page: 0,
+  pageCount: 1,
+  appManagement: false,
+  protection: 0,
+  pairings: [movedAli],
+  apps: [],
+};
+// A guarded phone's state on two pages, also split by hand. No test phone guards A, so its
+// guardian here is fictional: C, in a pairing of its own.
+const guardedMoveId = P.seeded('move A to D, guarded', 16);
+const movedDad: P.MovedPairing = {
+  pairId: P.seeded('pairing: C guards A'),
+  role: P.Role.PROTECTED,
+  peer: C.bundle,
+  peerName: 'Dad',
+  nickname: 'Dad',
+  peerModel: 'Google Pixel 8',
+  appManagement: false,
+  unpairChances: 2,
+  createdAt: 1_789_600_000_000,
+};
+const movedApps: P.MovedApp[] = [
+  { ...instagram, state: P.AppState.NEW, chancesLeft: 3 },
+  { ...whatsapp, state: P.AppState.ALLOWED, chancesLeft: 3 },
+  { ...tiktok, state: P.AppState.BLOCKED, chancesLeft: 1 },
+];
+// Every protection option on but managing apps in Settings (option 5, bit 4).
+const guardedProtection = 0b10_1111;
+const guardedMovePages: P.MoveState[] = [
+  { kind: P.Kind.MOVE_STATE, moveId: guardedMoveId, page: 0, pageCount: 2, appManagement: true, protection: guardedProtection, pairings: [movedAli, movedDad], apps: [] },
+  { kind: P.Kind.MOVE_STATE, moveId: guardedMoveId, page: 1, pageCount: 2, appManagement: true, protection: guardedProtection, pairings: [], apps: movedApps },
+];
 
 interface MessageCase {
   name: string;
@@ -768,13 +853,141 @@ const messageCases: MessageCase[] = [
     rawBody: fromHex('01000102'),
   },
   {
-    name: 'a reserved kind this version does not know',
+    name: 'a kind this version does not know',
     from: B,
     to: A,
     pairing: AB,
-    kind: 0x30,
+    kind: 0x7f,
     body: null,
     rawBody: fromHex('00'),
+  },
+  { name: 'LIST_REQUEST', from: A, to: B, pairing: AB, kind: P.Kind.LIST_REQUEST, body: { kind: P.Kind.LIST_REQUEST, listId } },
+  { name: 'APP_LIST page 0 of 2, with 16 × 16 icons', from: B, to: A, pairing: AB, kind: P.Kind.APP_LIST, body: appListPage0 },
+  { name: 'APP_LIST page 1 of 2', from: B, to: A, pairing: AB, kind: P.Kind.APP_LIST, body: appListPage1 },
+  { name: 'APP_LIST of a phone with no apps to list', from: B, to: A, pairing: AB, kind: P.Kind.APP_LIST, body: emptyAppList },
+  {
+    name: 'MANAGE blocking TikTok and allowing WhatsApp',
+    from: A,
+    to: B,
+    pairing: AB,
+    kind: P.Kind.MANAGE,
+    body: {
+      kind: P.Kind.MANAGE,
+      seq: 7,
+      entries: [
+        { ...tiktok, desired: P.Desired.BLOCKED },
+        { ...whatsapp, desired: P.Desired.ALLOWED },
+      ],
+    },
+  },
+  {
+    name: 'GUARDIAN_UNBLOCK asking C to approve what A is unblocking',
+    from: B,
+    to: C,
+    pairing: CB,
+    kind: P.Kind.GUARDIAN_UNBLOCK,
+    body: {
+      kind: P.Kind.GUARDIAN_UNBLOCK,
+      requestId: guardianUnblockRequestId,
+      app: instagramInfo,
+      proposerFp: A.fp,
+      proposerName: 'Mom',
+      guardianCount: 2,
+    },
+  },
+  {
+    name: 'DECISION approving the GUARDIAN_UNBLOCK',
+    from: C,
+    to: B,
+    pairing: CB,
+    kind: P.Kind.DECISION,
+    body: {
+      kind: P.Kind.DECISION,
+      requestId: guardianUnblockRequestId,
+      target: { requestKind: P.Kind.GUARDIAN_UNBLOCK, app: instagram },
+      decision: P.Verdict.APPROVE,
+      note: '',
+    },
+  },
+  {
+    name: 'STATUS of the GUARDIAN_UNBLOCK: the proposer approved, C is waiting',
+    from: B,
+    to: A,
+    pairing: AB,
+    kind: P.Kind.STATUS,
+    body: {
+      kind: P.Kind.STATUS,
+      requestId: guardianUnblockRequestId,
+      requestKind: P.Kind.GUARDIAN_UNBLOCK,
+      outcome: P.Outcome.OPEN,
+      reason: P.CancelReason.NONE,
+      guardians: [
+        { guardianFp: A.fp, guardianName: 'Mom', state: P.GuardianState.APPROVED },
+        { guardianFp: C.fp, guardianName: 'Dad', state: P.GuardianState.WAITING },
+      ],
+    },
+  },
+  {
+    name: 'NOTICE APP_MANAGED: A blocked TikTok',
+    from: B,
+    to: C,
+    pairing: CB,
+    kind: P.Kind.NOTICE,
+    body: {
+      kind: P.Kind.NOTICE,
+      notice: { code: P.NoticeCode.APP_MANAGED, app: tiktok, label: 'TikTok', change: P.AppChange.BLOCKED, guardianFp: A.fp, guardianName: 'Mom' },
+    },
+  },
+  {
+    name: 'NOTICE GUARDIAN_MOVED: A moved to D',
+    from: B,
+    to: C,
+    pairing: CB,
+    kind: P.Kind.NOTICE,
+    body: { kind: P.Kind.NOTICE, notice: { code: P.NoticeCode.GUARDIAN_MOVED, guardianFp: D.fp, guardianName: 'Mom' } },
+  },
+  {
+    name: 'HANDOVER from A, which moved to D',
+    from: A,
+    to: B,
+    pairing: AB,
+    kind: P.Kind.HANDOVER,
+    body: { kind: P.Kind.HANDOVER, newBundle: D.bundle, deviceModel: 'Google Pixel 10' },
+  },
+  {
+    name: 'MOVE_REQUEST from the new phone',
+    from: D,
+    to: A,
+    pairing: DA,
+    kind: P.Kind.MOVE_REQUEST,
+    body: { kind: P.Kind.MOVE_REQUEST, deviceModel: 'Google Pixel 10', deviceOwner: false },
+  },
+  { name: 'MOVE_STATE of a phone that only guards', from: A, to: D, pairing: DA, kind: P.Kind.MOVE_STATE, body: guardianMovePage },
+  { name: 'MOVE_STATE page 0 of 2 of a guarded phone: its pairings', from: A, to: D, pairing: DA, kind: P.Kind.MOVE_STATE, body: guardedMovePages[0]! },
+  { name: 'MOVE_STATE page 1 of 2: its decisions about apps', from: A, to: D, pairing: DA, kind: P.Kind.MOVE_STATE, body: guardedMovePages[1]! },
+  {
+    name: 'MOVE_ANSWER ready',
+    from: D,
+    to: A,
+    pairing: DA,
+    kind: P.Kind.MOVE_ANSWER,
+    body: { kind: P.Kind.MOVE_ANSWER, moveId, answer: P.MoveAnswerCode.READY, reason: P.MoveDeclineReason.NONE },
+  },
+  {
+    name: 'MOVE_ANSWER declining: the new phone is not device owner',
+    from: D,
+    to: A,
+    pairing: DA,
+    kind: P.Kind.MOVE_ANSWER,
+    body: { kind: P.Kind.MOVE_ANSWER, moveId: guardedMoveId, answer: P.MoveAnswerCode.DECLINE, reason: P.MoveDeclineReason.NOT_DEVICE_OWNER },
+  },
+  {
+    name: 'MOVE_DONE committed',
+    from: A,
+    to: D,
+    pairing: DA,
+    kind: P.Kind.MOVE_DONE,
+    body: { kind: P.Kind.MOVE_DONE, moveId, outcome: P.MoveOutcome.COMMITTED },
   },
 ];
 
@@ -894,6 +1107,11 @@ const appRef = (w: P.ByteWriter, packageName = tiktok.packageName) => w.blob16(u
 const appInfoNoIcon = (w: P.ByteWriter, iconFormat = 0) =>
   appRef(w).blob16(utf8('TikTok')).blob16(utf8('com.android.vending')).u64(tiktokInfo.firstInstalled).u8(iconFormat);
 const explanation = utf8('My school club posts announcements only on TikTok.');
+const listedNoIcon = (w: P.ByteWriter, packageName = whatsapp.packageName, state = 1, iconFormat = 0) =>
+  w.blob16(utf8(packageName)).fixed(whatsapp.certDigest, 32).blob16(utf8('WhatsApp')).blob16(new Uint8Array(0)).u64(0).u8(state).u8(iconFormat);
+const moveHeader = (w: P.ByteWriter, protection = 0) => w.fixed(moveId, 16).u8(0).u8(1).u8(0).u8(protection);
+const movedPairingBytes = (w: P.ByteWriter, role: number, appManagement: number, unpairChances: number) =>
+  w.fixed(AB.pairId, 32).u8(role).raw(B.bundleBytes).blob16(utf8('Ali')).blob16(utf8('Ali')).blob16(new Uint8Array(0)).u8(appManagement).u8(unpairChances).u64(0);
 
 const rejectedBodies = [
   { name: 'PAIR_OFFER with role 3', ...body(P.Kind.PAIR_OFFER, (w) => w.u8(3).blob16(nameBytes('Mom')).blob16(new Uint8Array(0)).u8(0)) },
@@ -965,6 +1183,66 @@ const rejectedBodies = [
   { name: 'LEAVE with a body', ...body(P.Kind.LEAVE, (w) => w.u8(0)) },
   { name: 'UNPAIRED with how 4', ...body(P.Kind.UNPAIRED, (w) => w.u8(4)) },
   { name: 'NOTICE PROTECTION_CHANGED with option 7', ...body(P.Kind.NOTICE, (w) => w.u16(P.NoticeCode.PROTECTION_CHANGED).u8(7).u8(0)) },
+  { name: 'STATUS of a MANAGE, which is not a request', ...body(P.Kind.STATUS, (w) => w.fixed(unblockRequestId, 16).u8(P.Kind.MANAGE).u8(0).u8(0).u8(0)) },
+  {
+    name: 'NOTICE APP_MANAGED with change 4',
+    ...body(P.Kind.NOTICE, (w) => appRef(w.u16(P.NoticeCode.APP_MANAGED)).blob16(utf8('TikTok')).u8(4).fixed(A.fp, 32).blob16(utf8('Mom'))),
+  },
+  { name: 'APP_LIST page 2 of 2', ...body(P.Kind.APP_LIST, (w) => listedNoIcon(w.fixed(listId, 16).u8(2).u8(2).u8(1))) },
+  { name: 'APP_LIST page 1 of 2 with no apps', ...body(P.Kind.APP_LIST, (w) => w.fixed(listId, 16).u8(1).u8(2).u8(0)) },
+  {
+    name: "APP_LIST with a request's 32 × 32 icon format",
+    ...body(P.Kind.APP_LIST, (w) => listedNoIcon(w.fixed(listId, 16).u8(0).u8(1).u8(1), whatsapp.packageName, 1, 1).raw(new Uint8Array(P.ICON_BYTES))),
+  },
+  { name: 'APP_LIST with app state 4', ...body(P.Kind.APP_LIST, (w) => listedNoIcon(w.fixed(listId, 16).u8(0).u8(1).u8(1), whatsapp.packageName, 4)) },
+  {
+    name: 'APP_LIST naming a package twice',
+    ...body(P.Kind.APP_LIST, (w) => listedNoIcon(listedNoIcon(w.fixed(listId, 16).u8(0).u8(1).u8(2)))),
+  },
+  { name: 'MANAGE with seq 0', ...body(P.Kind.MANAGE, (w) => appRef(w.u64(0).u8(1)).u8(P.Desired.BLOCKED)) },
+  { name: 'MANAGE with no apps', ...body(P.Kind.MANAGE, (w) => w.u64(1).u8(0)) },
+  {
+    name: 'MANAGE with 26 apps',
+    ...body(P.Kind.MANAGE, (w) => {
+      w.u64(1).u8(26);
+      for (let i = 0; i < 26; i++) appRef(w, `com.example.app${i}`).u8(P.Desired.BLOCKED);
+    }),
+  },
+  { name: 'MANAGE asking for state 3', ...body(P.Kind.MANAGE, (w) => appRef(w.u64(1).u8(1)).u8(3)) },
+  {
+    name: 'MANAGE naming a package twice',
+    ...body(P.Kind.MANAGE, (w) => appRef(appRef(w.u64(1).u8(2)).u8(P.Desired.BLOCKED)).u8(P.Desired.ALLOWED)),
+  },
+  {
+    name: 'GUARDIAN_UNBLOCK with an empty proposer name',
+    ...body(P.Kind.GUARDIAN_UNBLOCK, (w) => appInfoNoIcon(w.fixed(guardianUnblockRequestId, 16)).fixed(A.fp, 32).blob16(new Uint8Array(0)).u8(2)),
+  },
+  {
+    name: 'GUARDIAN_UNBLOCK counting no guardians',
+    ...body(P.Kind.GUARDIAN_UNBLOCK, (w) => appInfoNoIcon(w.fixed(guardianUnblockRequestId, 16)).fixed(A.fp, 32).blob16(utf8('Mom')).u8(0)),
+  },
+  {
+    name: 'HANDOVER with bundle version 2',
+    ...body(P.Kind.HANDOVER, (w) => w.u8(2).raw(D.bundleBytes.slice(1)).blob16(utf8('Google Pixel 10'))),
+  },
+  { name: 'MOVE_REQUEST with bool 2', ...body(P.Kind.MOVE_REQUEST, (w) => w.blob16(utf8('Google Pixel 10')).u8(2)) },
+  { name: 'MOVE_STATE with protection bit 6', ...body(P.Kind.MOVE_STATE, (w) => moveHeader(w, 0x40).u8(0).u16(0)) },
+  {
+    name: 'MOVE_STATE: a pairing the old phone guards, with chances to remove a guardian',
+    ...body(P.Kind.MOVE_STATE, (w) => movedPairingBytes(moveHeader(w).u8(1), P.Role.GUARDIAN, 0, 1).u16(0)),
+  },
+  {
+    name: 'MOVE_STATE: a pairing guarding the old phone, with an app-management setting',
+    ...body(P.Kind.MOVE_STATE, (w) => movedPairingBytes(moveHeader(w).u8(1), P.Role.PROTECTED, 1, 0).u16(0)),
+  },
+  { name: 'MOVE_STATE: an app with 4 chances', ...body(P.Kind.MOVE_STATE, (w) => appRef(moveHeader(w).u8(0).u16(1)).u8(P.AppState.BLOCKED).u8(4)) },
+  {
+    name: 'MOVE_STATE naming a pairing twice',
+    ...body(P.Kind.MOVE_STATE, (w) => movedPairingBytes(movedPairingBytes(moveHeader(w).u8(2), P.Role.GUARDIAN, 1, 0), P.Role.GUARDIAN, 1, 0).u16(0)),
+  },
+  { name: 'MOVE_ANSWER ready, with a reason', ...body(P.Kind.MOVE_ANSWER, (w) => w.fixed(moveId, 16).u8(P.MoveAnswerCode.READY).u8(1)) },
+  { name: 'MOVE_ANSWER declining without a reason', ...body(P.Kind.MOVE_ANSWER, (w) => w.fixed(moveId, 16).u8(P.MoveAnswerCode.DECLINE).u8(0)) },
+  { name: 'MOVE_DONE with outcome 3', ...body(P.Kind.MOVE_DONE, (w) => w.fixed(moveId, 16).u8(3)) },
 ];
 
 for (const r of rejectedBodies) assert(!P.decodeBody(r.kind, r.body).ok, `body "${r.name}" must be refused`);
@@ -973,6 +1251,7 @@ for (const r of rejectedBodies) assert(!P.decodeBody(r.kind, r.body).ok, `body "
 const approveUnblock = byName('DECISION approving the UNBLOCK_APP');
 const denyUnlock = byName('DECISION denying the UNLOCK, with a note');
 const approveUnpair = byName('DECISION approving the UNPAIR');
+const approveGuardianUnblock = byName('DECISION approving the GUARDIAN_UNBLOCK');
 
 interface DecisionCheck {
   name: string;
@@ -992,6 +1271,14 @@ const storedUnblock: P.StoredRequest = {
 };
 const storedUnlock: P.StoredRequest = { ...storedUnblock, requestId: unlockRequestId, target: { requestKind: P.Kind.UNLOCK, sessionNonce: unlockSession } };
 const storedUnpair: P.StoredRequest = { ...storedUnblock, requestId: unpairRequestId, target: { requestKind: P.Kind.UNPAIR, targetPairId: CB.pairId } };
+const storedGuardianUnblock: P.StoredRequest = {
+  requestId: guardianUnblockRequestId,
+  target: { requestKind: P.Kind.GUARDIAN_UNBLOCK, app: instagram },
+  pairId: CB.pairId,
+  guardianFp: C.fp,
+  guardianSignPk: C.signPk,
+  ownFp: B.fp,
+};
 
 const decisionChecks: DecisionCheck[] = [
   { name: 'approval matching its UNBLOCK_APP request', message: approveUnblock, stored: storedUnblock, guardian: A, valid: true },
@@ -1027,14 +1314,78 @@ const decisionChecks: DecisionCheck[] = [
     guardian: C,
     valid: false,
   },
+  { name: 'approval matching its GUARDIAN_UNBLOCK request', message: approveGuardianUnblock, stored: storedGuardianUnblock, guardian: C, valid: true },
+  {
+    name: 'approval of a GUARDIAN_UNBLOCK checked as an UNBLOCK_APP of the same app',
+    message: approveGuardianUnblock,
+    stored: { ...storedGuardianUnblock, target: { requestKind: P.Kind.UNBLOCK_APP, app: instagram } },
+    guardian: C,
+    valid: false,
+  },
 ];
 
 for (const check of decisionChecks) {
-  const opened = P.openEnvelope(check.message.envelope, B.encKey, B.fp, A.fp);
+  const { from, to } = check.message.c;
+  const opened = P.openEnvelope(check.message.envelope, to.encKey, to.fp, from.fp);
   assert(opened.ok, `decision "${check.name}" opens`);
   const result = P.verifyDecision(check.stored, opened.value);
   assert(result.ok === check.valid, `decision check "${check.name}" should be ${check.valid ? 'valid' : 'invalid'}`);
 }
+
+// Putting paged lists back together (SPEC.md §11.10, §11.14 step 3): the rules that span pages.
+const anotherList = P.seeded('another list request', 16);
+const listAssemblies = [
+  { name: 'both pages', pages: [appListPage0, appListPage1], outcome: 'complete' },
+  { name: 'both pages, the second one first', pages: [appListPage1, appListPage0], outcome: 'complete' },
+  { name: 'the second page still missing', pages: [appListPage0], outcome: 'incomplete' },
+  { name: 'a page of another list', pages: [appListPage0, { ...appListPage1, listId: anotherList }], outcome: 'invalid' },
+  { name: 'pages that disagree on the page count', pages: [appListPage0, { ...appListPage1, pageCount: 3 }], outcome: 'invalid' },
+  { name: 'a package on two pages', pages: [appListPage0, { ...appListPage1, apps: [listedTiktok, listedWhatsapp] }], outcome: 'invalid' },
+  { name: 'the same page twice', pages: [appListPage0, appListPage0, appListPage1], outcome: 'invalid' },
+  { name: 'an empty list', pages: [emptyAppList], outcome: 'complete' },
+].map((c) => {
+  const result = P.assembleAppList(c.pages);
+  assert(result.state === c.outcome, `list assembly "${c.name}" should be ${c.outcome}, is ${result.state}`);
+  return {
+    name: c.name,
+    pages: c.pages.map((page) => P.encodeBody(page)),
+    outcome: c.outcome,
+    packages: result.state === 'complete' ? result.value.map((app) => app.packageName) : undefined,
+  };
+});
+
+const [guardedPage0, guardedPage1] = guardedMovePages as [P.MoveState, P.MoveState];
+const moveAssemblies = [
+  { name: 'a phone that only guards, on one page', pages: [guardianMovePage], outcome: 'complete' },
+  { name: 'a guarded phone, on two pages', pages: [guardedPage0, guardedPage1], outcome: 'complete' },
+  { name: 'the second page still missing', pages: [guardedPage0], outcome: 'incomplete' },
+  { name: 'pages that disagree on the protection options', pages: [guardedPage0, { ...guardedPage1, protection: 0b11_1111 }], outcome: 'invalid' },
+  { name: 'pages that disagree on the management setting', pages: [guardedPage0, { ...guardedPage1, appManagement: false }], outcome: 'invalid' },
+  { name: 'pages of different moves', pages: [guardedPage0, { ...guardedPage1, moveId }], outcome: 'invalid' },
+  { name: 'a pairing on two pages', pages: [guardedPage0, { ...guardedPage1, pairings: [movedAli] }], outcome: 'invalid' },
+  { name: 'a package on two pages', pages: [{ ...guardedPage0, apps: [movedApps[2]!] }, guardedPage1], outcome: 'invalid' },
+  {
+    name: "a peer whose bundle doesn't verify",
+    pages: [{ ...guardianMovePage, pairings: [{ ...movedAli, peer: { ...B.bundle, encPk: C.encPk } }] }],
+    outcome: 'invalid',
+  },
+  { name: 'a peer that is the new phone', pages: [{ ...guardianMovePage, pairings: [{ ...movedAli, peer: D.bundle }] }], outcome: 'invalid' },
+  { name: 'a peer that is the old phone', pages: [{ ...guardianMovePage, pairings: [{ ...movedAli, peer: A.bundle }] }], outcome: 'invalid' },
+  { name: 'protection options without guardians', pages: [{ ...guardianMovePage, protection: 0b1 }], outcome: 'invalid' },
+  { name: 'decisions about apps without guardians', pages: [{ ...guardianMovePage, apps: [movedApps[0]!] }], outcome: 'invalid' },
+].map((c) => {
+  const result = P.assembleMoveState(c.pages, D.fp, A.fp);
+  assert(result.state === c.outcome, `move assembly "${c.name}" should be ${c.outcome}, is ${result.state}`);
+  return {
+    name: c.name,
+    newPhone: D.name,
+    oldPhone: A.name,
+    pages: c.pages.map((page) => P.encodeBody(page)),
+    outcome: c.outcome,
+    pairIds: result.state === 'complete' ? result.value.pairings.map((pairing) => pairing.pairId) : undefined,
+    packages: result.state === 'complete' ? result.value.apps.map((app) => app.packageName) : undefined,
+  };
+});
 
 write('messages.json', {
   description:
@@ -1042,10 +1393,13 @@ write('messages.json', {
     'are exact; envelope is HPKE-sealed to the recipient with the ephemeral key DeriveKeyPair(ikmE). ' +
     'Bodies of an unknown kind or notice code are kept as received. rejectedEnvelopes must fail at stage "open" ' +
     '(SPEC.md §10.3 steps 1-4) or "signature" (step 6); rejectedBodies must fail to decode; decisionChecks verify a ' +
-    'DECISION against a stored request (§11.6).',
+    'DECISION against a stored request (§11.6). listAssemblies and moveAssemblies put the pages of an APP_LIST ' +
+    '(§11.10) and of a MOVE_STATE (§11.14) back together: each is complete, incomplete or invalid; a complete one ' +
+    'lists its pair ids and packages in page order.',
   pairings: [
     { name: 'AB', guardian: 'A', protected: 'B', pairId: AB.pairId },
     { name: 'CB', guardian: 'C', protected: 'B', pairId: CB.pairId },
+    { name: 'DA', creator: 'D', joiner: 'A', move: true, pairId: DA.pairId },
   ],
   messages: built.map((m) => ({
     name: m.c.name,
@@ -1072,4 +1426,6 @@ write('messages.json', {
     storedRequest: { ...check.stored, guardianSignPk: undefined, guardian: check.guardian.name },
     valid: check.valid,
   })),
+  listAssemblies,
+  moveAssemblies,
 });

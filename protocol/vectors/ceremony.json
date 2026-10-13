@@ -1,5 +1,5 @@
 {
-  "description": "The pairing ceremony (SPEC.md §6.3, §6.4). commit is over joinerReveal; transcript is bundle_A ‖ bundle_B ‖ n_A ‖ n_B; safetyCode is shown as safetyCodeDisplay.",
+  "description": "The pairing ceremony (SPEC.md §6.3, §6.4), and the same ceremony for a move (§6.5): D-A is phone A moving to phone D. commit is over joinerReveal; transcript is bundle_A ‖ bundle_B ‖ n_A ‖ n_B; safetyCode is shown as safetyCodeDisplay.",
   "ceremonies": [
     {
       "creator": "A",
@@ -26,6 +26,19 @@
       "safetyCode": "519194",
       "safetyCodeDisplay": "519 194",
       "pairId": "c16a5e5f8dc3b060b35e89b2d9465b8c080bbb49d68023b0e91421be9c2e8eff"
+    },
+    {
+      "creator": "D",
+      "joiner": "A",
+      "creatorNonce": "2346425134d4da40edae36a82a6d04f160694202df1021529d4e102a676b5396",
+      "joinerNonce": "a0e3afbb570b559638a5aee96f42aaca50f34984ced8c1cc3f938d09c3451fd3",
+      "creatorReveal": "0104b586de03d98dfc0834baf588d731fbfb6df8797b6a622dc4c88ae7f2faa7c692230ff1c94dd40d30d7248664353f56e9da1e517a213a4f35a951a045dba42f0c34a43f0d24427c4f6708d01942eeab4afe8f7e2e14dce822db236be40bb9e43a7d27d83cc66cc46b69ba3232cc1320148f3f7e770d5ac1ac14811f1b803be787802dd4e6d87fce9aca2a3d38015a6928334f1722ffbe4c3ae2cc8ea95acbdfbc2346425134d4da40edae36a82a6d04f160694202df1021529d4e102a676b5396",
+      "joinerReveal": "010480b45af42b7f071a6a9c5770ded81c83c4a199b2aa3068cf08da3ebef93a4fed7a9bbe33f0e3905dc3c43ec9d3f756edff203743aa82dfd0a131f1efd39f4d1b066701a0e6edc26dc7b1735188f35feb62e57a0859c477ed60918465f1af757d052e7eddc0bf634098b0747cb17acdc9748e968de710b32a4f29a4ea8181fa73ec4dff410802f5ffc1351e5f1dd0f26ca5fe9f806325e2d8b7e13e8bb33d3dc1a0e3afbb570b559638a5aee96f42aaca50f34984ced8c1cc3f938d09c3451fd3",
+      "commit": "6f65ef9278c4e6d25af4de3499fc75af04ae472fe8e8470ac2313768de849154",
+      "transcript": "0104b586de03d98dfc0834baf588d731fbfb6df8797b6a622dc4c88ae7f2faa7c692230ff1c94dd40d30d7248664353f56e9da1e517a213a4f35a951a045dba42f0c34a43f0d24427c4f6708d01942eeab4afe8f7e2e14dce822db236be40bb9e43a7d27d83cc66cc46b69ba3232cc1320148f3f7e770d5ac1ac14811f1b803be787802dd4e6d87fce9aca2a3d38015a6928334f1722ffbe4c3ae2cc8ea95acbdfbc010480b45af42b7f071a6a9c5770ded81c83c4a199b2aa3068cf08da3ebef93a4fed7a9bbe33f0e3905dc3c43ec9d3f756edff203743aa82dfd0a131f1efd39f4d1b066701a0e6edc26dc7b1735188f35feb62e57a0859c477ed60918465f1af757d052e7eddc0bf634098b0747cb17acdc9748e968de710b32a4f29a4ea8181fa73ec4dff410802f5ffc1351e5f1dd0f26ca5fe9f806325e2d8b7e13e8bb33d3dc12346425134d4da40edae36a82a6d04f160694202df1021529d4e102a676b5396a0e3afbb570b559638a5aee96f42aaca50f34984ced8c1cc3f938d09c3451fd3",
+      "safetyCode": "362285",
+      "safetyCodeDisplay": "362 285",
+      "pairId": "f6445bfbb34d9c934f17b74cafbf9a4a1f684d57cb9acfad7a0a38171bc277e6"
     }
   ],
   "rejections": [

@@ -251,8 +251,8 @@ describe('messages.json', () => {
     const stored: P.StoredRequest = {
       requestId: bytes(s.requestId),
       target:
-        target.requestKind === P.Kind.UNBLOCK_APP
-          ? { requestKind: P.Kind.UNBLOCK_APP, app: { packageName: target.app.packageName, certDigest: bytes(target.app.certDigest) } }
+        target.requestKind === P.Kind.UNBLOCK_APP || target.requestKind === P.Kind.GUARDIAN_UNBLOCK
+          ? { requestKind: target.requestKind, app: { packageName: target.app.packageName, certDigest: bytes(target.app.certDigest) } }
           : target.requestKind === P.Kind.UNLOCK
             ? { requestKind: P.Kind.UNLOCK, sessionNonce: bytes(target.sessionNonce) }
             : { requestKind: P.Kind.UNPAIR, targetPairId: bytes(target.targetPairId) },
@@ -262,5 +262,29 @@ describe('messages.json', () => {
       ownFp: bytes(s.ownFp),
     };
     expect(P.verifyDecision(stored, opened.value).ok).toBe(check.valid);
+  });
+
+  /** Decodes each page body of an assembly case, which must all decode. */
+  function pagesOf<T extends P.MessageBody>(kind: number, pages: string[]): T[] {
+    return pages.map((page) => {
+      const decoded = P.decodeBody(kind, bytes(page));
+      if (!decoded.ok) throw new Error(decoded.error);
+      return decoded.value as T;
+    });
+  }
+
+  it.each(messages.listAssemblies as Json[])('list assembly: $name', (c) => {
+    const result = P.assembleAppList(pagesOf<P.AppList>(P.Kind.APP_LIST, c.pages));
+    expect(result.state).toBe(c.outcome);
+    if (result.state === 'complete') expect(result.value.map((app) => app.packageName)).toEqual(c.packages);
+  });
+
+  it.each(messages.moveAssemblies as Json[])('move assembly: $name', (c) => {
+    const result = P.assembleMoveState(pagesOf<P.MoveState>(P.Kind.MOVE_STATE, c.pages), phone(c.newPhone).fp, phone(c.oldPhone).fp);
+    expect(result.state).toBe(c.outcome);
+    if (result.state === 'complete') {
+      expect(result.value.pairings.map((pairing) => hex(pairing.pairId))).toEqual(c.pairIds);
+      expect(result.value.apps.map((app) => app.packageName)).toEqual(c.packages);
+    }
   });
 });

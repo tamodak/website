@@ -1,12 +1,12 @@
 # Killit pairing protocol, version 1
 
-Status: **draft for review** (Phase 3, 2026-10-12). It is normative for Killit and for the tamodak.org server.
+Status: **draft for review** (Phase 3, 2026-10-12; app management and moving phones added in Phase 5b, 2026-10-13). It is normative for Killit and for the tamodak.org server.
 
 PLAN.md explains the product and *why* (§2–§6). This document fixes *the bytes*: what is signed, encrypted, sent and checked. Where the two disagree, this document wins, and PLAN.md §16 lists every refinement it makes.
 
 The test vectors in [`vectors/`](vectors/) belong to this specification. The TypeScript reference implementation in [`src/`](src/) generates them, the server's tests use them, and Killit's tests must reproduce them. If an implementation disagrees with a vector, that is a bug. If this text and a vector disagree, both get fixed before anything ships.
 
-**Terms.** A *guardian* is PLAN.md's master and a *protected phone* is its slave (decision E5). A *phone* is one Killit installation with its own identity (§3). A *pairing* is one guardian–protected relationship between two phones. Two phones can have two pairings, one in each direction (A2).
+**Terms.** A *guardian* is PLAN.md's master and a *protected phone* is its slave (decision E5). A *phone* is one Killit installation with its own identity (§3). A *pairing* is one guardian–protected relationship between two phones. Two phones can have two pairings, one in each direction (A2). *Management* is a protected phone's setting that lets its guardians see and change which of its apps are blocked (PLAN.md §3.8). A *move* hands every pairing of an *old* phone to a *new* one (PLAN.md §3.10).
 
 ---
 
@@ -172,9 +172,9 @@ Errors are JSON, `{ "error": "<code>", … }`, with these statuses:
 | 400 | `bad_request` | | Schema validation, a bad base64url value, a wrong size |
 | 401 | `unauthorized` | `reason`: `stale_timestamp` or `invalid` | §4.2. Unknown devices, bad signatures and replayed nonces all report `invalid`. |
 | 403 | `attestation_rejected` | `reason` (§5.2) | Registration failed verification |
-| 403 | `not_linked` | `peers` | A message to a phone with no link (§8) |
-| 404 | `not_found` | | Unknown invite, or one the caller isn't part of |
-| 409 | `conflict` | `state` | An invite in the wrong state for the call |
+| 403 | `not_linked` | `peers` | A message to a phone with no link (§8), or a link handover to one (§7) |
+| 404 | `not_found` | | Unknown invite, or one the caller isn't part of; an unknown phone in a link handover |
+| 409 | `conflict` | `state` | An invite in the wrong state for the call, or `link_limit` (§7) |
 | 410 | `expired` | | An expired challenge or invite |
 | 413 | `too_large` | | A body over the route's limit |
 | 429 | `rate_limited` or `mailbox_full` | | Includes a `Retry-After` header |
@@ -290,6 +290,12 @@ Before showing the code, each phone checks that the peer's `encSig` verifies and
 
 `pairId` names the pairing from then on. Every message carries it (§10.2), so messages from an earlier pairing between the same two phones can never be replayed into a newer one.
 
+### 6.5 The ceremony of a move
+
+Moving to a new phone (§11.14) runs the same ceremony between the two phones of one person: the **new phone creates** the invite and shows the code, and the **old phone joins**. The two screens sit side by side, so the people compare the safety code by looking rather than on a call, and it guards against exactly the same thing. A code alone would not do: a server that answered the join with its own bundle would receive the old phone's every pairing.
+
+The server can't tell a move from a pairing. Each phone knows which one it started (PLAN.md §15.1, principle 3), and the first message after the link says it: PAIR_OFFER for a pairing, MOVE_REQUEST for a move. A phone that receives the other one ends the ceremony without a pairing. The ceremony's `pairId` names the move's messages, as it names PAIR_OFFER and PAIR_ANSWER.
+
 ---
 
 ## 7. Links
@@ -299,6 +305,18 @@ Before showing the code, each phone checks that the peer's `encSig` verifies and
 - `GET /v1/links` returns `{ "links": [{ "peer", "lastSeenDaysAgo" }] }`: whole days since the peer's last signed request (PLAN.md §3.11). The server stores only the date.
 - `DELETE /v1/links/{peer}` returns `204` and is idempotent. A phone deletes a link only when no pairing is left between the two phones in either direction (after LEAVE, a completed UNPAIR, a declined offer, or the end of device-owner release), and only after its last message on it has been sent.
 - A phone has at most 50 links. The confirmation that would create a 51st answers `409 conflict` with `state: "link_limit"`.
+
+**Handing links to a new phone.** The new phone of a move has a new fingerprint and none of the old phone's links, so its pairs couldn't reach it. Just before telling them (§11.14), the old phone asks the server to copy its links:
+
+```
+POST /v1/links/handover   { "to": base64url(fp) }      signed by the old phone
+→ 200 { "copied": n }                                  links the new phone gained
+```
+
+- `to` must be a registered phone other than the caller (`404 not_found` otherwise) that is linked to the caller (`403 not_linked` with `peers: [to]` otherwise). That link comes from the move's ceremony, which `to` took part in, so the new phone consented.
+- Every other link of the caller is copied to `to`, in one transaction. Links `to` already has are kept, and the call is idempotent.
+- `to` may not end up with more than 50 links (`409 conflict`, `state: "link_limit"`, and nothing is copied). Each pair gains a link to `to` while it still has the caller's; that one goes when the old phone deletes itself (§5.4), so the pairs' own limit isn't checked here.
+- The server learns that one phone handed its links to another (§12). It learns nothing about the pairings themselves.
 
 ---
 
@@ -372,7 +390,7 @@ The receiving phone runs these steps in order. Any failure drops the message sil
 2. HPKE-Open with `info` built from `from` and the phone's own fingerprint.
 3. `innerLength` is in range and every padding byte is zero.
 4. `version` is 1. Another version goes to step 9. `senderFp` equals `from`, and `recipientFp` is this phone.
-5. `pairId` names a current pairing between sender and receiver. For PAIR_OFFER and PAIR_ANSWER, it is the `pairId` of the ceremony in progress instead.
+5. `pairId` names a current pairing between sender and receiver. For the *ceremony kinds* (PAIR_OFFER, PAIR_ANSWER and the four MOVE_ kinds), it is the `pairId` of the ceremony in progress instead.
 6. The signature verifies with the sender's stored `signPk`.
 7. This `messageId` hasn't been seen from this sender. Seen ids are kept for at least 400 days, and anything with a `createdAt` older than 365 days by the receiver's clock is dropped.
 8. The kind is allowed for the sender's role in that pairing (§11), and the body decodes strictly.
@@ -397,7 +415,17 @@ A DECISION has one more rule, in §11.6.
 | `0x15` | LEAVE | guardian → protected | §11.8 |
 | `0x16` | UNPAIRED | protected → the guardian it removed | §11.8 |
 | `0x20` | NOTICE | either | §11.9 |
-| `0x30`–`0x3F` | reserved for Phase 5b: LIST_REQUEST, APP_LIST, MANAGE, the G2 relay, HANDOVER | | specified with Phase 5b |
+| `0x30` | LIST_REQUEST | guardian → protected | §11.10 |
+| `0x31` | APP_LIST | protected → guardian | §11.10 |
+| `0x32` | MANAGE | guardian → protected | §11.11 |
+| `0x33` | GUARDIAN_UNBLOCK | protected → each guardian | §11.12 |
+| `0x34` | HANDOVER | either: the side that moved | §11.13 |
+| `0x35` | MOVE_REQUEST | creator (the new phone) → joiner (the old one) | §11.14 |
+| `0x36` | MOVE_STATE | joiner → creator | §11.14 |
+| `0x37` | MOVE_ANSWER | creator → joiner | §11.14 |
+| `0x38` | MOVE_DONE | joiner → creator | §11.14 |
+
+The *requests* a guardian decides on are UNBLOCK_APP, UNLOCK, UNPAIR and GUARDIAN_UNBLOCK. Kinds `0x39`–`0xFF` are unassigned: §10.3 step 9 applies to them.
 
 ### 11.1 PAIR_OFFER and PAIR_ANSWER
 
@@ -475,9 +503,9 @@ body = bytes(16) requestId
 
 ```
 body = bytes(16) requestId
-     ‖ u8        requestKind        0x10, 0x11 or 0x12
-     ‖ target                       UNBLOCK_APP: AppRef · UNLOCK: bytes(32) sessionNonce
-                                    UNPAIR: bytes(32) targetPairId
+     ‖ u8        requestKind        0x10, 0x11, 0x12 or 0x33
+     ‖ target                       UNBLOCK_APP and GUARDIAN_UNBLOCK: AppRef
+                                    UNLOCK: bytes(32) sessionNonce · UNPAIR: bytes(32) targetPairId
      ‖ u8        decision           1 = APPROVE, 2 = DENY
      ‖ text16    note               paragraph, 0–300 code points, ≤ 1200 bytes (G9)
 ```
@@ -496,18 +524,20 @@ STATUS keeps every guardian's copy of a request current. It covers PLAN.md's CAN
 
 ```
 body = bytes(16) requestId
-     ‖ u8        requestKind
+     ‖ u8        requestKind        a request kind (§11)
      ‖ u8        outcome            0 = OPEN, 1 = APPROVED, 2 = DENIED, 3 = CANCELLED
      ‖ u8        reason             0 unless CANCELLED: 1 = WITHDRAWN (left the waiting screen, a call, H12;
-                                    or the protected user withdrew it), 2 = APP_UNINSTALLED (H11),
-                                    3 = RESOLVED_BY_UNLOCK (G11), 4 = GUARDIAN_REMOVED (its pairing ended)
+                                    the protected user withdrew it; management was turned off; the phone
+                                    moved; or the guardian who proposed a GUARDIAN_UNBLOCK blocked the app
+                                    again), 2 = APP_UNINSTALLED (H11), 3 = RESOLVED_BY_UNLOCK (G11),
+                                    4 = GUARDIAN_REMOVED (its pairing ended)
      ‖ u8        count              0–40
      ‖ count × ( bytes(32) guardianFp ‖ text16 guardianName ‖ u8 state )
                                     state: 0 = WAITING, 1 = APPROVED, 2 = DENIED.
                                     The name is that guardian's own selfName (§11.1).
 ```
 
-This is how guardians see each other's decisions (G10) without being paired with each other. Above 40 guardians the list is cut off; the UI warns long before that (A3).
+This is how guardians see each other's decisions (G10) without being paired with each other. Above 40 guardians the list is cut off; the UI warns long before that (A3). A guardian whose own entry shows a decision it never sent records it as its own: that happens when one of its MANAGE commands answered the request (§11.11).
 
 ### 11.8 LEAVE and UNPAIRED
 
@@ -533,8 +563,134 @@ body = u16 code ‖ params
 | `0x0005` | RELEASE_CANCELLED | protected | none |
 | `0x0006` | PROTECTION_CHANGED | protected | `u8 option ‖ bool enabled`. Options: 1 = uninstall, 2 = force stop, 3 = safe boot, 4 = factory reset, 5 = managing apps, 6 = date and time (H6) |
 | `0x0007` | MANAGEMENT_CHANGED | protected | `bool enabled` (H6) |
+| `0x0008` | APP_MANAGED | protected | `AppRef app ‖ text16 label ‖ u8 change ‖ bytes(32) guardianFp ‖ text16 guardianName`. The label is a line of 0–100 code points. Changes: 1 = BLOCKED, 2 = UNBLOCKED, 3 = REFUSED (Android wouldn't block it). The guardian is the one whose MANAGE made the change, by its own name (§11.11) |
+| `0x0009` | GUARDIAN_MOVED | protected | `bytes(32) guardianFp ‖ text16 guardianName`: one of the other guardians moved to a new phone, now called `guardianFp` (B6, §11.13) |
 
 Notices only inform. An unknown code shows as "Update Killit to see this" (E-F1), and its `params` aren't parsed. Release completing is UNPAIRED with `how = RELEASED`.
+
+### 11.10 LIST_REQUEST and APP_LIST
+
+A guardian asks to see the protected phone's apps, and the protected phone answers with its list (PLAN.md §3.8: pulled, never streamed).
+
+```
+LIST_REQUEST = bytes(16) listId     random; the APP_LIST pages that answer it carry it
+
+APP_LIST  = bytes(16) listId        the LIST_REQUEST's
+          ‖ u8     page             0 … pageCount − 1
+          ‖ u8     pageCount        1–255
+          ‖ u8     count            apps on this page; 0 only when the whole list is empty (one page)
+          ‖ count × ListedApp
+ListedApp = AppRef
+          ‖ text16 label            line, 0–100 code points, ≤ 400 bytes
+          ‖ text16 installer        a package name, or empty when unknown or sideloaded
+          ‖ u64    firstInstalled   time
+          ‖ u8     state            1 = ALLOWED, 2 = BLOCKED, 3 = NEW (default-blocking blocked it and
+                                    nobody has decided yet)
+          ‖ u8     iconFormat       0 = none, 2 = RGBA8888, 16 × 16
+          ‖ bytes  icon             1024 bytes when iconFormat = 2, absent when 0
+```
+
+- The protected phone answers only while management is on, and at most 4 times per guardian per hour; it ignores further requests, and the guardian keeps showing its last list. While management is off it answers with NOTICE MANAGEMENT_CHANGED (`enabled` = 0) instead, which corrects a guardian whose view is stale.
+- The list holds every installed app the user installed or that has a launcher icon (G5), Killit excepted, sorted by package name and cut at 1000. `state` says whether the app is suspended now.
+- Pages are filled in order, each as full as it fits (§10.1), and all carry the same `listId` and `pageCount`. A package appears once in the whole list. The guardian assembles the list once every page has arrived, drops a list that breaks a rule, and uses only the list it asked for last.
+- Icons are 16 × 16, a quarter of a request's 32 × 32, so about seven apps fit on a page and a long list takes a few dozen envelopes rather than hundreds. They are raw pixels for the reason given in §11.2.
+
+### 11.11 MANAGE
+
+A guardian changes which apps are blocked.
+
+```
+body = u64 seq                      this guardian's counter in this pairing: starts at 1, only grows
+     ‖ u8  count                    1–25
+     ‖ count × ( AppRef app ‖ u8 desired )      desired: 1 = ALLOWED, 2 = BLOCKED
+```
+
+A package appears at most once in a MANAGE.
+
+**The protected phone's rules** (PLAN.md §3.8, G2–G4, G7) apply only while management is on; otherwise a MANAGE is ignored. Commands are state-based: for each package the phone keeps the highest `seq` it applied from each guardian, and ignores an entry whose `seq` is not higher, so neither a replayed nor a reordered MANAGE can undo a newer one. Killit's own package is never changed. Each other entry:
+
+- **BLOCKED** applies at once, whatever the certificate, since blocking is the stricter direction. The app is blocked, and stays blocked if it is reinstalled, and every guardian receives NOTICE APP_MANAGED (BLOCKED). If Android refuses to suspend the package, only the sender receives APP_MANAGED (REFUSED). An open request to unblock the package is answered too: as this guardian's denial if it hadn't decided yet (an UNBLOCK_APP then costs a chance, D4), and otherwise by cancelling it (WITHDRAWN).
+- **ALLOWED** needs every guardian, and only counts for the app the guardian saw. The installed app must be signed by the entry's certificate and be blocked now, or the entry is ignored. Then:
+  - an open request to unblock the package (UNBLOCK_APP or GUARDIAN_UNBLOCK) counts it as this guardian's approval, if it hadn't decided yet;
+  - otherwise, with a single guardian, the app is unblocked at once, G7 resets its chances, and the guardian receives APP_MANAGED (UNBLOCKED);
+  - otherwise the protected phone opens a GUARDIAN_UNBLOCK (§11.12) for it, which this guardian has already approved.
+
+The protected user is told of every change (G4). A guardian's phone that knows of an open request for a package answers the request with a DECISION instead of putting the package in a MANAGE; the rules above settle the race in which it didn't know yet.
+
+### 11.12 GUARDIAN_UNBLOCK
+
+The relay of G2: one guardian's MANAGE is unblocking an app, and every other guardian must approve too. The guardians aren't paired with each other, so the protected phone, which they all trust, asks them on that guardian's behalf.
+
+```
+body = bytes(16) requestId
+     ‖ AppInfo   app
+     ‖ bytes(32) proposerFp         the guardian unblocking it
+     ‖ text16    proposerName       that guardian's own name (§11.1), line 1–40
+     ‖ u8        guardianCount      1–50: every guardian who must approve, the proposer included
+```
+
+Every guardian receives it, the proposer too, whose copy is already approved, so its phone shows the progress without Deny and Approve. The others decide with DECISION, whose target is the AppRef, and STATUS keeps every copy current, as for UNBLOCK_APP. When everyone has approved, the app is unblocked and G7 resets its chances. A denial closes it and costs no chance, because chances belong to the protected phone's own requests. It is cancelled when the proposer stops being a guardian (GUARDIAN_REMOVED), when management is turned off, and when the proposer blocks the app again (both WITHDRAWN). A package has at most one open request to unblock it, whichever kind it is.
+
+### 11.13 HANDOVER
+
+```
+body = bundle    newBundle (162)    the phone that takes this side of the pairing over (§3.2)
+     ‖ text16    deviceModel        its Build.MANUFACTURER + " " + Build.MODEL, line 0–64
+```
+
+The old phone of a move sends one HANDOVER for each of its pairings. It is signed with the old phone's key, which its pair already trusts, and that signature is what vouches for the new key (PLAN.md §3.10). The receiver checks that `newBundle`'s encSig verifies and that the new fingerprint is neither its own nor the sender's. From then on the pairing named in the header belongs to `fp(newBundle.signPk)`: its signing key, encryption key and device model are replaced, and everything else stays, the pair id, names and counters included. The new fingerprint's badge is different, as it should be (PLAN.md §3.2).
+
+A protected receiver sends its open requests again, to the new phone, wherever the moving guardian hadn't decided yet. It also tells its other guardians, with NOTICE GUARDIAN_MOVED (B6). A HANDOVER is never answered.
+
+### 11.14 Moving to a new phone
+
+Four messages travel between the two phones of a move, over the link their ceremony created (§6.5), in this order:
+
+```
+MOVE_REQUEST = text16 deviceModel       the new phone's, line 0–64
+             ‖ bool   deviceOwner       whether it can take guardians: device owner, with a passkey,
+                                        and not frozen by a move of its own
+
+MOVE_STATE   = bytes(16) moveId         random, chosen by the old phone; the same on every page
+             ‖ u8     page              0 … pageCount − 1
+             ‖ u8     pageCount         1–255
+             ‖ bool   appManagement     the old phone's management setting; 0 unless it has guardians
+             ‖ u8     protection        its protection options: bit (option − 1) set for each one that is
+                                        on, options as in NOTICE PROTECTION_CHANGED; 0 unless it has
+                                        guardians. Bits 6 and 7 are 0.
+             ‖ u8     pairingCount      pairings on this page
+             ‖ pairingCount × MovedPairing
+             ‖ u16    appCount          apps on this page
+             ‖ appCount × MovedApp
+MovedPairing = bytes(32) pairId
+             ‖ u8     role              the old phone's side: 1 = GUARDIAN, 2 = PROTECTED
+             ‖ bundle peer (162)
+             ‖ text16 peerName          line, 1–40 code points: the peer's own name
+             ‖ text16 nickname          line, 1–40 code points: what the old phone calls the peer (A5)
+             ‖ text16 peerModel         line, 0–64 code points
+             ‖ bool   appManagement     GUARDIAN: the peer's setting, as last heard; PROTECTED: 0
+             ‖ u8     unpairChances     PROTECTED: 0–3 (G8); GUARDIAN: 0
+             ‖ u64    createdAt
+MovedApp     = AppRef
+             ‖ u8     state             1 = ALLOWED, 2 = BLOCKED, 3 = NEW
+             ‖ u8     chancesLeft       0–3 (D4)
+
+MOVE_ANSWER  = bytes(16) moveId
+             ‖ u8     answer            1 = READY, 2 = DECLINE
+             ‖ u8     reason            0 with READY; with DECLINE: 1 = USER, 2 = NOT_DEVICE_OWNER,
+                                        3 = HAS_PAIRINGS, 4 = INVALID
+
+MOVE_DONE    = bytes(16) moveId
+             ‖ u8     outcome           1 = COMMITTED, 2 = ABANDONED
+```
+
+1. **Once linked, the new phone sends MOVE_REQUEST.** If the old phone has guardians and `deviceOwner` is 0, it stops there: only a device owner can be protected (PLAN.md §4).
+2. **The old phone sends MOVE_STATE**: every pairing, and, if it has guardians, its management setting, its protection options and its decisions about apps. Those are every package it has decided about except the approved ones of its own system image, with each one's chances.
+3. **The new phone checks the pages and answers MOVE_ANSWER.** Every page carries the same `moveId`, `pageCount`, `appManagement` and `protection`; each page from 0 to `pageCount` − 1 arrives exactly once; pair ids and packages are unique across the pages; and every peer's bundle verifies, with no peer being the new phone or the old one. It answers READY and keeps the state staged, not yet in use, or DECLINE: USER when its user gave up, NOT_DEVICE_OWNER when the state has guardians it can't take, HAS_PAIRINGS when it has pairings already (a move needs a phone without any), INVALID when a page breaks a rule.
+4. **On READY, the old phone waits for its user to confirm**, for at most 30 minutes. Then it asks the server to hand its links over (§7), withdraws its own open requests (STATUS, WITHDRAWN), sends a HANDOVER for every pairing, and sends MOVE_DONE (COMMITTED) last, in the same `POST /v1/messages` when everything fits. After that it forgets every pairing and deletes its identity and its registration (`DELETE /v1/devices/me`). If it had guardians, it stays frozen (PLAN.md §3.10): blocked apps stay blocked, and the only way out is releasing device owner. An old phone that gives up sends MOVE_DONE (ABANDONED) instead.
+5. **On COMMITTED, the new phone puts the state in use**, and it sends nothing to its pairs before then. The old phone sent every HANDOVER before MOVE_DONE, so each pair's mailbox holds the HANDOVER ahead of anything the new phone sends it. On ABANDONED the new phone discards the state. After READY it waits for MOVE_DONE, and only an hour later may its user give up, when the old phone can no longer commit.
+
+Putting the state in use makes the pairings the new phone's own. If they include guardians, the new phone also takes the old one's management setting, protection options (the clock always locked, I1) and chance counters, and keeps its decisions about apps (PLAN.md §3.10). Apps blocked on the old phone are blocked here, and approved ones stay approved. An app the user installed here that the old phone never decided about is blocked as new and announced as an install is (NOTICE APP_INSTALLED, D1). The new phone's own system apps stay as they were.
 
 ---
 
@@ -549,7 +705,7 @@ Notices only inform. An unknown code shows as "Update Killit to see this" (E-F1)
 | `links` | the two devices, creation time | `DELETE /v1/links` or the device's deletion |
 | `messages` | sender fingerprint, recipient, envelope, time received | acknowledged |
 
-The server **never** has: roles, names, nicknames, device models, app names or packages, request kinds, decisions, explanations, or any decryption key. It does see who talks to whom, when and how often (PLAN.md §5.3), the security level of each phone, and the public keys exchanged during pairing. Logs carry no bodies, codes, tokens or IP addresses.
+The server **never** has: roles, names, nicknames, device models, app names or packages, app lists, request kinds, decisions, explanations, or any decryption key. It does see who talks to whom, when and how often (PLAN.md §5.3), the security level of each phone, the public keys exchanged during pairing, and which phone handed its links to which when someone moved (§7). Logs carry no bodies, codes, tokens or IP addresses.
 
 ---
 
@@ -567,6 +723,9 @@ The server **never** has: roles, names, nicknames, device models, app names or p
 | Invite | 15 minutes to join, then 15 minutes to finish |
 | Long polls | 30 s |
 | Push | at most one every 10 s per phone |
+| App list (§11.10) | 1000 apps; 255 pages; 4 answers per guardian per hour |
+| MANAGE (§11.11) | 25 apps per message |
+| Move (§11.14) | 255 pages; 100 pairings and 4000 apps in all; 30 minutes for the old phone to commit after READY, an hour before the new phone may give up |
 
 Rate limits are server configuration (defaults in `server/src/config.ts`), set per IP address and per device.
 
@@ -584,7 +743,7 @@ Rate limits are server configuration (defaults in `server/src/config.ts`), set p
 | `invite-code.json` | code bytes ↔ display form, and accepted and rejected inputs |
 | `ceremony.json` | reveals, commitment, safety code and `pairId` |
 | `hpke.json` | RFC 9180 A.1 and the `info` used by Killit |
-| `messages.json` | every kind: the field values, `body`, `inner`, signature, padded plaintext and envelope; plus envelopes that must be rejected |
+| `messages.json` | every kind: the field values, `body`, `inner`, signature, padded plaintext and envelope; plus envelopes and bodies that must be rejected, and DECISIONs checked against stored requests |
 
 Run `pnpm --filter @tamodak/protocol vectors` to regenerate them and `pnpm --filter @tamodak/protocol test` to check them.
 

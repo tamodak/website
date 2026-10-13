@@ -5,10 +5,10 @@
  * End-to-end code: the server never imports it.
  */
 import type { KeyObject } from 'node:crypto';
-import { ByteReader, ByteWriter, DecodeError, decodeWith, type Result } from './bytes.ts';
+import { ByteReader, ByteWriter, DecodeError, decodeWith, toHex, type Result } from './bytes.ts';
 import { PAIR_ID_BYTES } from './ceremony.ts';
 import { MESSAGE_VERSION, encodeInner, verifyInner, type MessageHeader, type OpenedMessage } from './envelope.ts';
-import { FINGERPRINT_BYTES } from './identity.ts';
+import { FINGERPRINT_BYTES, encodeBundle, readBundle, type Bundle } from './identity.ts';
 import { TEXT, readPackageName, readText, writePackageName, writeText } from './text.ts';
 
 /** Message kinds (SPEC.md §11). */
@@ -23,10 +23,22 @@ export const Kind = {
   LEAVE: 0x15,
   UNPAIRED: 0x16,
   NOTICE: 0x20,
+  LIST_REQUEST: 0x30,
+  APP_LIST: 0x31,
+  MANAGE: 0x32,
+  GUARDIAN_UNBLOCK: 0x33,
+  HANDOVER: 0x34,
+  MOVE_REQUEST: 0x35,
+  MOVE_STATE: 0x36,
+  MOVE_ANSWER: 0x37,
+  MOVE_DONE: 0x38,
 } as const;
 export type Kind = (typeof Kind)[keyof typeof Kind];
 
-/** Who may send each kind, by role in the pairing named in the header (SPEC.md §10.3 step 8). */
+/**
+ * Who may send each kind (SPEC.md §10.3 step 8): by role in the pairing named in the header, or,
+ * for the ceremony kinds, by part in the ceremony.
+ */
 export const SENDER: Readonly<Record<Kind, 'creator' | 'joiner' | 'guardian' | 'protected' | 'either'>> = {
   [Kind.PAIR_OFFER]: 'creator',
   [Kind.PAIR_ANSWER]: 'joiner',
@@ -38,6 +50,15 @@ export const SENDER: Readonly<Record<Kind, 'creator' | 'joiner' | 'guardian' | '
   [Kind.LEAVE]: 'guardian',
   [Kind.UNPAIRED]: 'protected',
   [Kind.NOTICE]: 'either',
+  [Kind.LIST_REQUEST]: 'guardian',
+  [Kind.APP_LIST]: 'protected',
+  [Kind.MANAGE]: 'guardian',
+  [Kind.GUARDIAN_UNBLOCK]: 'protected',
+  [Kind.HANDOVER]: 'either',
+  [Kind.MOVE_REQUEST]: 'creator',
+  [Kind.MOVE_STATE]: 'joiner',
+  [Kind.MOVE_ANSWER]: 'creator',
+  [Kind.MOVE_DONE]: 'joiner',
 };
 
 /** True for a kind this implementation understands. Anything else is shown as "Update Killit". */
@@ -45,9 +66,17 @@ export function isKnownKind(kind: number): kind is Kind {
   return Object.values(Kind).includes(kind as Kind);
 }
 
+/**
+ * True for the kinds two phones exchange in a ceremony, before any pairing exists between them:
+ * their header names the ceremony's pair id (SPEC.md §10.3 step 5).
+ */
+export function isCeremonyKind(kind: number): boolean {
+  return SENDER[kind as Kind] === 'creator' || SENDER[kind as Kind] === 'joiner';
+}
+
 /** The requests a guardian decides on. */
-export type RequestKind = typeof Kind.UNBLOCK_APP | typeof Kind.UNLOCK | typeof Kind.UNPAIR;
-const REQUEST_KINDS: readonly number[] = [Kind.UNBLOCK_APP, Kind.UNLOCK, Kind.UNPAIR];
+export type RequestKind = typeof Kind.UNBLOCK_APP | typeof Kind.UNLOCK | typeof Kind.UNPAIR | typeof Kind.GUARDIAN_UNBLOCK;
+const REQUEST_KINDS: readonly number[] = [Kind.UNBLOCK_APP, Kind.UNLOCK, Kind.UNPAIR, Kind.GUARDIAN_UNBLOCK];
 
 export const Role = { GUARDIAN: 1, PROTECTED: 2 } as const;
 export type Role = (typeof Role)[keyof typeof Role];
@@ -81,6 +110,8 @@ export const NoticeCode = {
   RELEASE_CANCELLED: 0x0005,
   PROTECTION_CHANGED: 0x0006,
   MANAGEMENT_CHANGED: 0x0007,
+  APP_MANAGED: 0x0008,
+  GUARDIAN_MOVED: 0x0009,
 } as const;
 
 export const RemovedHow = { LEFT: 1, UNPAIRED: 2 } as const;
@@ -97,6 +128,28 @@ export const ProtectionOption = {
 } as const;
 export type ProtectionOption = (typeof ProtectionOption)[keyof typeof ProtectionOption];
 
+/** An app's state in an APP_LIST or a MOVE_STATE (SPEC.md §11.10, §11.14). */
+export const AppState = { ALLOWED: 1, BLOCKED: 2, NEW: 3 } as const;
+export type AppState = (typeof AppState)[keyof typeof AppState];
+
+/** What a MANAGE asks for one app (SPEC.md §11.11). */
+export const Desired = { ALLOWED: 1, BLOCKED: 2 } as const;
+export type Desired = (typeof Desired)[keyof typeof Desired];
+
+/** What NOTICE APP_MANAGED reports (SPEC.md §11.9). */
+export const AppChange = { BLOCKED: 1, UNBLOCKED: 2, REFUSED: 3 } as const;
+export type AppChange = (typeof AppChange)[keyof typeof AppChange];
+
+export const MoveAnswerCode = { READY: 1, DECLINE: 2 } as const;
+export type MoveAnswerCode = (typeof MoveAnswerCode)[keyof typeof MoveAnswerCode];
+
+/** Why a MOVE_ANSWER declines; NONE exactly when it is READY. */
+export const MoveDeclineReason = { NONE: 0, USER: 1, NOT_DEVICE_OWNER: 2, HAS_PAIRINGS: 3, INVALID: 4 } as const;
+export type MoveDeclineReason = (typeof MoveDeclineReason)[keyof typeof MoveDeclineReason];
+
+export const MoveOutcome = { COMMITTED: 1, ABANDONED: 2 } as const;
+export type MoveOutcome = (typeof MoveOutcome)[keyof typeof MoveOutcome];
+
 /** Sizes fixed by SPEC.md §11. */
 export const REQUEST_ID_BYTES = 16;
 export const SESSION_NONCE_BYTES = 32;
@@ -105,6 +158,23 @@ export const ICON_SIDE = 32;
 export const ICON_BYTES = ICON_SIDE * ICON_SIDE * 4;
 export const MAX_GUARDIANS = 50;
 export const MAX_STATUS_ENTRIES = 40;
+/** An APP_LIST icon: 16 × 16 RGBA8888 (SPEC.md §11.10). */
+export const LIST_ICON_SIDE = 16;
+export const LIST_ICON_BYTES = LIST_ICON_SIDE * LIST_ICON_SIDE * 4;
+/** The `iconFormat` codes: 1 for a request's 32 × 32 icon, 2 for a list's 16 × 16 one. */
+export const ICON_FORMAT_REQUEST = 1;
+export const ICON_FORMAT_LIST = 2;
+/** Length of an APP_LIST's `listId` and of a move's `moveId`. */
+export const LIST_ID_BYTES = 16;
+export const MOVE_ID_BYTES = 16;
+/** Apps in one MANAGE: 25 of the longest still fit in one body. */
+export const MAX_MANAGE_APPS = 25;
+/** The longest app list, and the most apps and pairings one move carries (SPEC.md §13). */
+export const MAX_LISTED_APPS = 1000;
+export const MAX_MOVED_PAIRINGS = 100;
+export const MAX_MOVED_APPS = 4000;
+/** The protection options are bits 0–5 of MOVE_STATE's `protection`. */
+export const PROTECTION_BITS = 0b0011_1111;
 
 /** An app, as a request binds it: its package and signing-certificate digest. */
 export interface AppRef {
@@ -171,7 +241,8 @@ export interface Unpair {
 export type DecisionTarget =
   | { readonly requestKind: typeof Kind.UNBLOCK_APP; readonly app: AppRef }
   | { readonly requestKind: typeof Kind.UNLOCK; readonly sessionNonce: Uint8Array }
-  | { readonly requestKind: typeof Kind.UNPAIR; readonly targetPairId: Uint8Array };
+  | { readonly requestKind: typeof Kind.UNPAIR; readonly targetPairId: Uint8Array }
+  | { readonly requestKind: typeof Kind.GUARDIAN_UNBLOCK; readonly app: AppRef };
 
 export interface Decision {
   readonly kind: typeof Kind.DECISION;
@@ -218,12 +289,126 @@ export type NoticeBody =
   | { readonly code: typeof NoticeCode.RELEASE_CANCELLED }
   | { readonly code: typeof NoticeCode.PROTECTION_CHANGED; readonly option: ProtectionOption; readonly enabled: boolean }
   | { readonly code: typeof NoticeCode.MANAGEMENT_CHANGED; readonly enabled: boolean }
+  | {
+      readonly code: typeof NoticeCode.APP_MANAGED;
+      readonly app: AppRef;
+      readonly label: string;
+      readonly change: AppChange;
+      readonly guardianFp: Uint8Array;
+      readonly guardianName: string;
+    }
+  | { readonly code: typeof NoticeCode.GUARDIAN_MOVED; readonly guardianFp: Uint8Array; readonly guardianName: string }
   /** A code this implementation doesn't know. Its parameters are kept, unparsed (SPEC.md §11.9). */
   | { readonly code: number; readonly unknown: true; readonly params: Uint8Array };
 
 export interface Notice {
   readonly kind: typeof Kind.NOTICE;
   readonly notice: NoticeBody;
+}
+
+export interface ListRequest {
+  readonly kind: typeof Kind.LIST_REQUEST;
+  readonly listId: Uint8Array;
+}
+
+/** One app in an APP_LIST (SPEC.md §11.10). */
+export interface ListedApp extends AppRef {
+  readonly label: string;
+  /** The installer's package name, or empty when unknown or sideloaded. */
+  readonly installer: string;
+  readonly firstInstalled: number;
+  readonly state: AppState;
+  /** 16 × 16 RGBA8888 pixels, rows top to bottom, not premultiplied; null when there's none. */
+  readonly icon: Uint8Array | null;
+}
+
+/** One page of the list answering a LIST_REQUEST. */
+export interface AppList {
+  readonly kind: typeof Kind.APP_LIST;
+  readonly listId: Uint8Array;
+  readonly page: number;
+  readonly pageCount: number;
+  readonly apps: readonly ListedApp[];
+}
+
+/** One app a MANAGE changes, and what it should be. */
+export interface ManageEntry extends AppRef {
+  readonly desired: Desired;
+}
+
+export interface Manage {
+  readonly kind: typeof Kind.MANAGE;
+  readonly seq: number;
+  readonly entries: readonly ManageEntry[];
+}
+
+export interface GuardianUnblock {
+  readonly kind: typeof Kind.GUARDIAN_UNBLOCK;
+  readonly requestId: Uint8Array;
+  readonly app: AppInfo;
+  readonly proposerFp: Uint8Array;
+  readonly proposerName: string;
+  readonly guardianCount: number;
+}
+
+export interface Handover {
+  readonly kind: typeof Kind.HANDOVER;
+  readonly newBundle: Bundle;
+  readonly deviceModel: string;
+}
+
+export interface MoveRequest {
+  readonly kind: typeof Kind.MOVE_REQUEST;
+  readonly deviceModel: string;
+  readonly deviceOwner: boolean;
+}
+
+/** One pairing a move hands over, as the old phone holds it (SPEC.md §11.14). */
+export interface MovedPairing {
+  readonly pairId: Uint8Array;
+  /** The old phone's side of it. */
+  readonly role: Role;
+  readonly peer: Bundle;
+  readonly peerName: string;
+  readonly nickname: string;
+  readonly peerModel: string;
+  /** GUARDIAN: the peer's setting as last heard; PROTECTED: always false. */
+  readonly appManagement: boolean;
+  /** PROTECTED: 0–3; GUARDIAN: always 0. */
+  readonly unpairChances: number;
+  readonly createdAt: number;
+}
+
+/** One decision about an app a move hands over, with the app's chances (D4). */
+export interface MovedApp extends AppRef {
+  readonly state: AppState;
+  readonly chancesLeft: number;
+}
+
+/** One page of a move's state. */
+export interface MoveState {
+  readonly kind: typeof Kind.MOVE_STATE;
+  readonly moveId: Uint8Array;
+  readonly page: number;
+  readonly pageCount: number;
+  readonly appManagement: boolean;
+  /** The protection options, bit (option − 1) for each one that is on. */
+  readonly protection: number;
+  readonly pairings: readonly MovedPairing[];
+  readonly apps: readonly MovedApp[];
+}
+
+export interface MoveAnswer {
+  readonly kind: typeof Kind.MOVE_ANSWER;
+  readonly moveId: Uint8Array;
+  readonly answer: MoveAnswerCode;
+  readonly reason: MoveDeclineReason;
+}
+
+export interface MoveDone {
+  readonly kind: typeof Kind.MOVE_DONE;
+  readonly moveId: Uint8Array;
+  readonly outcome: MoveOutcome;
 }
 
 export type MessageBody =
@@ -236,7 +421,16 @@ export type MessageBody =
   | Status
   | Leave
   | Unpaired
-  | Notice;
+  | Notice
+  | ListRequest
+  | AppList
+  | Manage
+  | GuardianUnblock
+  | Handover
+  | MoveRequest
+  | MoveState
+  | MoveAnswer
+  | MoveDone;
 
 // ------------------------------------------------------------------------------------------------
 // Shared structures
@@ -288,6 +482,63 @@ function readAppInfo(reader: ByteReader): AppInfo {
 
 function checkCount(value: number, min: number, max: number, what: string): void {
   if (!Number.isInteger(value) || value < min || value > max) throw new RangeError(`${what} out of range`);
+}
+
+function writeListedApp(writer: ByteWriter, app: ListedApp): void {
+  writeAppRef(writer, app);
+  writeText(writer, app.label, TEXT.appLabel);
+  writePackageName(writer, app.installer, true);
+  writer.u64(app.firstInstalled).u8(app.state);
+  if (app.icon === null) {
+    writer.u8(0);
+  } else {
+    writer.u8(ICON_FORMAT_LIST).fixed(app.icon, LIST_ICON_BYTES);
+  }
+}
+
+function readListedApp(reader: ByteReader): ListedApp {
+  const { packageName, certDigest } = readAppRef(reader);
+  const label = readText(reader, TEXT.appLabel);
+  const installer = readPackageName(reader, true);
+  const firstInstalled = reader.u64();
+  const state = readEnum<AppState>(reader, [AppState.ALLOWED, AppState.BLOCKED, AppState.NEW], 'app state');
+  const iconFormat = readEnum(reader, [0, ICON_FORMAT_LIST], 'icon format');
+  const icon = iconFormat === ICON_FORMAT_LIST ? reader.fixed(LIST_ICON_BYTES) : null;
+  return { packageName, certDigest, label, installer, firstInstalled, state, icon };
+}
+
+function writeMovedPairing(writer: ByteWriter, pairing: MovedPairing): void {
+  writer.fixed(pairing.pairId, PAIR_ID_BYTES).u8(pairing.role).raw(encodeBundle(pairing.peer));
+  writeText(writer, pairing.peerName, TEXT.selfName);
+  writeText(writer, pairing.nickname, TEXT.selfName);
+  writeText(writer, pairing.peerModel, TEXT.deviceModel);
+  writer.bool(pairing.appManagement).u8(pairing.unpairChances).u64(pairing.createdAt);
+}
+
+function readMovedPairing(reader: ByteReader): MovedPairing {
+  const pairId = reader.fixed(PAIR_ID_BYTES);
+  const role = readEnum<Role>(reader, [Role.GUARDIAN, Role.PROTECTED], 'role');
+  const peer = readBundle(reader);
+  const peerName = readText(reader, TEXT.selfName);
+  const nickname = readText(reader, TEXT.selfName);
+  const peerModel = readText(reader, TEXT.deviceModel);
+  // Both fields belong to the protected side of the pairing: the setting is the peer's when the
+  // old phone guards it, and the chances to remove a guardian are the old phone's when it is the
+  // one guarded. Each is zero on the other side.
+  const appManagement = reader.bool();
+  if (role === Role.PROTECTED && appManagement) throw new DecodeError('the guarded side states no app-management setting');
+  const unpairChances = readRange(reader, 0, role === Role.PROTECTED ? 3 : 0, 'unpairChances');
+  const createdAt = reader.u64();
+  return { pairId, role, peer, peerName, nickname, peerModel, appManagement, unpairChances, createdAt };
+}
+
+/** Refuses a list that names one package twice. */
+function checkUniquePackages(apps: readonly AppRef[]): void {
+  const seen = new Set<string>();
+  for (const app of apps) {
+    if (seen.has(app.packageName)) throw new DecodeError('a package appears twice');
+    seen.add(app.packageName);
+  }
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -365,6 +616,64 @@ export function encodeBody(body: MessageBody): Uint8Array {
     case Kind.NOTICE:
       writeNotice(writer, body.notice);
       break;
+    case Kind.LIST_REQUEST:
+      writer.fixed(body.listId, LIST_ID_BYTES);
+      break;
+    case Kind.APP_LIST:
+      checkCount(body.pageCount, 1, 255, 'pageCount');
+      checkCount(body.page, 0, body.pageCount - 1, 'page');
+      checkCount(body.apps.length, body.pageCount === 1 ? 0 : 1, 255, 'apps on a page');
+      writer.fixed(body.listId, LIST_ID_BYTES).u8(body.page).u8(body.pageCount).u8(body.apps.length);
+      for (const app of body.apps) writeListedApp(writer, app);
+      break;
+    case Kind.MANAGE:
+      checkCount(body.seq, 1, Number.MAX_SAFE_INTEGER, 'seq');
+      checkCount(body.entries.length, 1, MAX_MANAGE_APPS, 'apps in a MANAGE');
+      writer.u64(body.seq).u8(body.entries.length);
+      for (const entry of body.entries) {
+        writeAppRef(writer, entry);
+        writer.u8(entry.desired);
+      }
+      break;
+    case Kind.GUARDIAN_UNBLOCK:
+      checkCount(body.guardianCount, 1, MAX_GUARDIANS, 'guardianCount');
+      writer.fixed(body.requestId, REQUEST_ID_BYTES);
+      writeAppInfo(writer, body.app);
+      writer.fixed(body.proposerFp, FINGERPRINT_BYTES);
+      writeText(writer, body.proposerName, TEXT.selfName);
+      writer.u8(body.guardianCount);
+      break;
+    case Kind.HANDOVER:
+      writer.raw(encodeBundle(body.newBundle));
+      writeText(writer, body.deviceModel, TEXT.deviceModel);
+      break;
+    case Kind.MOVE_REQUEST:
+      writeText(writer, body.deviceModel, TEXT.deviceModel);
+      writer.bool(body.deviceOwner);
+      break;
+    case Kind.MOVE_STATE:
+      checkCount(body.pageCount, 1, 255, 'pageCount');
+      checkCount(body.page, 0, body.pageCount - 1, 'page');
+      checkCount(body.pairings.length, 0, 255, 'pairings on a page');
+      checkCount(body.apps.length, 0, 0xffff, 'apps on a page');
+      writer.fixed(body.moveId, MOVE_ID_BYTES).u8(body.page).u8(body.pageCount).bool(body.appManagement).u8(body.protection);
+      writer.u8(body.pairings.length);
+      for (const pairing of body.pairings) writeMovedPairing(writer, pairing);
+      writer.u16(body.apps.length);
+      for (const app of body.apps) {
+        writeAppRef(writer, app);
+        writer.u8(app.state).u8(app.chancesLeft);
+      }
+      break;
+    case Kind.MOVE_ANSWER:
+      if ((body.answer === MoveAnswerCode.READY) !== (body.reason === MoveDeclineReason.NONE)) {
+        throw new RangeError('READY has no reason; DECLINE needs one');
+      }
+      writer.fixed(body.moveId, MOVE_ID_BYTES).u8(body.answer).u8(body.reason);
+      break;
+    case Kind.MOVE_DONE:
+      writer.fixed(body.moveId, MOVE_ID_BYTES).u8(body.outcome);
+      break;
   }
   const bytes = writer.finish();
   // Enumerations arrive as plain numbers at runtime (from JSON, say), so the decoder has the last
@@ -378,6 +687,7 @@ function writeDecisionTarget(writer: ByteWriter, target: DecisionTarget): void {
   writer.u8(target.requestKind);
   switch (target.requestKind) {
     case Kind.UNBLOCK_APP:
+    case Kind.GUARDIAN_UNBLOCK:
       writeAppRef(writer, target.app);
       break;
     case Kind.UNLOCK:
@@ -416,6 +726,16 @@ function writeNotice(writer: ByteWriter, notice: NoticeBody): void {
       break;
     case NoticeCode.MANAGEMENT_CHANGED:
       writer.bool(notice.enabled);
+      break;
+    case NoticeCode.APP_MANAGED:
+      writeAppRef(writer, notice.app);
+      writeText(writer, notice.label, TEXT.appLabel);
+      writer.u8(notice.change).fixed(notice.guardianFp, FINGERPRINT_BYTES);
+      writeText(writer, notice.guardianName, TEXT.selfName);
+      break;
+    case NoticeCode.GUARDIAN_MOVED:
+      writer.fixed(notice.guardianFp, FINGERPRINT_BYTES);
+      writeText(writer, notice.guardianName, TEXT.selfName);
       break;
   }
 }
@@ -528,15 +848,96 @@ function readBody(kind: number, reader: ByteReader): MessageBody {
       };
     case Kind.NOTICE:
       return { kind: Kind.NOTICE, notice: readNotice(reader) };
+    case Kind.LIST_REQUEST:
+      return { kind: Kind.LIST_REQUEST, listId: reader.fixed(LIST_ID_BYTES) };
+    case Kind.APP_LIST: {
+      const listId = reader.fixed(LIST_ID_BYTES);
+      const page = reader.u8();
+      const pageCount = readRange(reader, 1, 255, 'pageCount');
+      if (page >= pageCount) throw new DecodeError('page out of range');
+      // An empty page only stands for an empty list, which has a single page.
+      const count = readRange(reader, pageCount === 1 ? 0 : 1, 255, 'apps on a page');
+      const apps: ListedApp[] = [];
+      for (let i = 0; i < count; i++) apps.push(readListedApp(reader));
+      checkUniquePackages(apps);
+      return { kind: Kind.APP_LIST, listId, page, pageCount, apps };
+    }
+    case Kind.MANAGE: {
+      const seq = reader.u64();
+      if (seq < 1) throw new DecodeError('seq out of range');
+      const count = readRange(reader, 1, MAX_MANAGE_APPS, 'apps in a MANAGE');
+      const entries: ManageEntry[] = [];
+      for (let i = 0; i < count; i++) {
+        const app = readAppRef(reader);
+        entries.push({ ...app, desired: readEnum<Desired>(reader, [Desired.ALLOWED, Desired.BLOCKED], 'desired') });
+      }
+      checkUniquePackages(entries);
+      return { kind: Kind.MANAGE, seq, entries };
+    }
+    case Kind.GUARDIAN_UNBLOCK:
+      return {
+        kind: Kind.GUARDIAN_UNBLOCK,
+        requestId: reader.fixed(REQUEST_ID_BYTES),
+        app: readAppInfo(reader),
+        proposerFp: reader.fixed(FINGERPRINT_BYTES),
+        proposerName: readText(reader, TEXT.selfName),
+        guardianCount: readRange(reader, 1, MAX_GUARDIANS, 'guardianCount'),
+      };
+    case Kind.HANDOVER:
+      return { kind: Kind.HANDOVER, newBundle: readBundle(reader), deviceModel: readText(reader, TEXT.deviceModel) };
+    case Kind.MOVE_REQUEST:
+      return { kind: Kind.MOVE_REQUEST, deviceModel: readText(reader, TEXT.deviceModel), deviceOwner: reader.bool() };
+    case Kind.MOVE_STATE: {
+      const moveId = reader.fixed(MOVE_ID_BYTES);
+      const page = reader.u8();
+      const pageCount = readRange(reader, 1, 255, 'pageCount');
+      if (page >= pageCount) throw new DecodeError('page out of range');
+      const appManagement = reader.bool();
+      const protection = reader.u8();
+      if ((protection & ~PROTECTION_BITS) !== 0) throw new DecodeError('unknown protection option');
+      const pairingCount = reader.u8();
+      const pairings: MovedPairing[] = [];
+      for (let i = 0; i < pairingCount; i++) pairings.push(readMovedPairing(reader));
+      const appCount = reader.u16();
+      const apps: MovedApp[] = [];
+      for (let i = 0; i < appCount; i++) {
+        const app = readAppRef(reader);
+        const state = readEnum<AppState>(reader, [AppState.ALLOWED, AppState.BLOCKED, AppState.NEW], 'app state');
+        apps.push({ ...app, state, chancesLeft: readRange(reader, 0, 3, 'chancesLeft') });
+      }
+      if (new Set(pairings.map((p) => toHex(p.pairId))).size !== pairings.length) throw new DecodeError('a pairing appears twice');
+      checkUniquePackages(apps);
+      return { kind: Kind.MOVE_STATE, moveId, page, pageCount, appManagement, protection, pairings, apps };
+    }
+    case Kind.MOVE_ANSWER: {
+      const moveId = reader.fixed(MOVE_ID_BYTES);
+      const answer = readEnum<MoveAnswerCode>(reader, [MoveAnswerCode.READY, MoveAnswerCode.DECLINE], 'answer');
+      const reason = readEnum<MoveDeclineReason>(
+        reader,
+        answer === MoveAnswerCode.READY
+          ? [MoveDeclineReason.NONE]
+          : [MoveDeclineReason.USER, MoveDeclineReason.NOT_DEVICE_OWNER, MoveDeclineReason.HAS_PAIRINGS, MoveDeclineReason.INVALID],
+        'decline reason',
+      );
+      return { kind: Kind.MOVE_ANSWER, moveId, answer, reason };
+    }
+    case Kind.MOVE_DONE:
+      return {
+        kind: Kind.MOVE_DONE,
+        moveId: reader.fixed(MOVE_ID_BYTES),
+        outcome: readEnum<MoveOutcome>(reader, [MoveOutcome.COMMITTED, MoveOutcome.ABANDONED], 'outcome'),
+      };
     default:
       throw new DecodeError('unknown kind');
   }
 }
 
+
 function readDecisionTarget(reader: ByteReader): DecisionTarget {
   const requestKind = readEnum(reader, REQUEST_KINDS, 'request kind') as RequestKind;
   switch (requestKind) {
     case Kind.UNBLOCK_APP:
+    case Kind.GUARDIAN_UNBLOCK:
       return { requestKind, app: readAppRef(reader) };
     case Kind.UNLOCK:
       return { requestKind, sessionNonce: reader.fixed(SESSION_NONCE_BYTES) };
@@ -571,6 +972,17 @@ function readNotice(reader: ByteReader): NoticeBody {
       };
     case NoticeCode.MANAGEMENT_CHANGED:
       return { code: NoticeCode.MANAGEMENT_CHANGED, enabled: reader.bool() };
+    case NoticeCode.APP_MANAGED:
+      return {
+        code: NoticeCode.APP_MANAGED,
+        app: readAppRef(reader),
+        label: readText(reader, TEXT.appLabel),
+        change: readEnum<AppChange>(reader, [AppChange.BLOCKED, AppChange.UNBLOCKED, AppChange.REFUSED], 'change'),
+        guardianFp: reader.fixed(FINGERPRINT_BYTES),
+        guardianName: readText(reader, TEXT.selfName),
+      };
+    case NoticeCode.GUARDIAN_MOVED:
+      return { code: NoticeCode.GUARDIAN_MOVED, guardianFp: reader.fixed(FINGERPRINT_BYTES), guardianName: readText(reader, TEXT.selfName) };
     default:
       return { code, unknown: true, params: reader.rest() };
   }

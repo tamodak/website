@@ -9,5 +9,6 @@ export * from './api.ts';
 export * from './envelope.ts';
 export * from './hpke.ts';
 export * from './messages.ts';
+export * from './paging.ts';
 export * from './text.ts';
 export * from './testing.ts';
