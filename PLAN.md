@@ -1,6 +1,6 @@
 # tamodak.org — Website, pairing server, and Killit pairing plan
 
-Status: **draft v12**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14, the UI/UX design in §15, and the protocol in §16 and `protocol/SPEC.md`. No product questions are open. **Phases 1, 3, 4 and 5 are implemented**: Killit's default-blocking (2026-10-05); the protocol, the pairing server and its deploy stack (2026-10-12); and pairing in Killit, push included (2026-10-13). **`api.test.tamodak.org` is live** (2026-10-13), and tamodak.org shows a placeholder until Phase 2. Next is Phase 5b. See §11 and §12.
+Status: **draft v13**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14, the UI/UX design in §15, and the protocol in §16 and `protocol/SPEC.md`. No product questions are open. **Phases 1, 3, 4, 5 and 5b are implemented**: Killit's default-blocking (2026-10-05); the protocol, the pairing server and its deploy stack (2026-10-12); pairing in Killit, push included (2026-10-13); and guardians managing apps and moving to a new phone (2026-10-13). **`api.test.tamodak.org` is live** (2026-10-13), and tamodak.org shows a placeholder until Phase 2. Next is Phase 6, the security review. See §11 and §12.
 
 This covers three things that have to be designed together:
 
@@ -231,6 +231,8 @@ Nothing is streamed continuously.
 - Commands are **state-based**: "desired state of `pkg` + cert = BLOCKED, seq = 17". Every master has a monotonic sequence number, so replayed or reordered commands are harmless.
 - A master's unblock of an app counts as an approval route, so it resets that app's chance counter (G7).
 
+**As built (Phase 5b, SPEC.md §11.10–§11.12):** list icons are 16 × 16 (O1), so a list of a few hundred apps is a few dozen envelopes; the slave answers at most 4 list requests per master per hour (O7). A master's MANAGE for an app the slave is already asking about answers that request: unblocking approves it, blocking denies it (O6). Turning management off withdraws what the masters were unblocking for each other.
+
 ### 3.9 Approval UI (decided)
 
 - **Deny 60% · Approve 40%, with Deny on the left** (E1). It mirrors to the right in Arabic (RTL), because Android's start-side convention keeps it on the reading-first side.
@@ -242,15 +244,20 @@ Nothing is streamed continuously.
 
 **Why it's needed.** A device's identity is a key locked inside that phone's secure hardware, and it **can't be copied**. A new phone means a new key, and without help every pair would have to pair again with a new safety-code call.
 
-**Handover, when the old phone still works:**
-1. On the new phone, install Killit, set a password, and choose "I'm moving from another phone". It shows a one-time code.
-2. On the old phone, enter that code. The old phone signs a **HANDOVER** statement with its old key: "my identity is now this new key", and it's sent end to end to every pair.
-3. Each pair checks the signature with the **old key it already trusts**. It swaps in the new key automatically and shows a NOTICE ("Ali — Samsung moved to a new phone"). No new safety-code call is needed, because the trusted old key vouched for the new one.
-4. The old phone deletes its pairing data.
+**Handover, when the old phone still works** (as built in Phase 5b, SPEC.md §6.5, §11.13, §11.14):
+1. On the new phone, install Killit, set a password, and choose "Moving from another phone?" on the Hub. It shows a one-time code. Only a phone without pairings can take a move.
+2. On the old phone, choose "Move to a new phone" and type the code. The two phones run the pairing ceremony and show a **6-digit safety code side by side**, which the user compares on both screens (O2). A code alone wouldn't do: a server answering the join with its own key would receive every pairing.
+3. The old phone sends its state over that link: every pairing, and if it has guardians, its management setting, protection options, decisions about apps and chance counters. The new phone checks it and stages it.
+4. The user confirms on the old phone within 30 minutes. The server copies the old phone's links to the new one (O3), the old phone withdraws its own open requests, signs a **HANDOVER** for every pair with its old key ("this pairing now belongs to this new key"), and tells the new phone last. Then it deletes its pairings, its registration and its identity.
+5. Each pair checks the HANDOVER with the **old key it already trusts**, swaps in the new key and shows "Ali moved to a new phone". No new safety-code call is needed, because the trusted old key vouched for the new one. A protected pair sends the moved guardian's new phone the requests it hadn't answered, and tells its other guardians (B6).
+
+**What the new phone takes over** (O4): blocked apps stay blocked and approved ones stay approved, for the app decided about. Apps the user installed on the new phone before moving are blocked as new, enabled or not. The new phone's own system apps keep what was decided there, unless the old phone blocked the same app. The clock lock (I1) is always on.
+
+**The old phone of a protected move stays frozen** (O5): its blocks stay, nothing on it can be unblocked, it can't take guardians again, and only the 14-day release (or a factory reset) ends that. Otherwise moving to a spare phone would be a way to shed the guardians.
 
 **Where it lives:**
-- **Master:** from Requests (with password), since a master moving doesn't weaken anyone.
-- **Slave:** only **inside the unlocked Killit**. Otherwise a slave could "move" to a spare phone and leave their real phone with zero masters, which is free. The new slave phone also needs Device Owner (a factory reset) before it can be the target.
+- **Master:** from *Phones I guard* › Settings (with password), since a master moving doesn't weaken anyone.
+- **Slave:** only **inside the unlocked Killit** (*My phone* › Settings, after every guardian approved an unlock). The new slave phone also needs Device Owner (a factory reset) and a password before it can be the target.
 
 **When the old phone is lost:** there's nothing to sign with, so it's handled as a fresh start.
 - A lost **master** pairs again from its new phone (a new PAIR with a safety code). The slave removes the dead key with an UNPAIR. The dead key can't deny, so the 30-day timer runs out, or the other masters approve it sooner.
@@ -365,10 +372,11 @@ The UI should say the master is approving *a package*, not a verified identity.
    - (a) unsuspend a package after every master approved this device's own request;
    - (b) open the gate for a live session whose in-memory nonce still exists (§3.4);
    - (c) **only if the slave enabled management:** suspend or unsuspend a named package on a master's signed, sequence-numbered command, with the quorum from G2;
-   - (d) change the local peer list (PAIR, UNPAIR, LEAVE, HANDOVER).
+   - (d) change the local peer list (PAIR, UNPAIR, LEAVE, HANDOVER);
+   - (e) **only on a phone without guardians, in a move its own user started and checked with the safety code:** take over the old phone's decisions about apps, management setting and protection options (§3.10). That user could have chosen all of it alone, so a move never loosens anything a guardian holds.
 
    One function (`RemoteEffects.apply`) holds this whitelist.
-2. There is never a remote command for anything else: no hardening changes, uninstall, release, wipe, password change, or management toggle.
+2. There is never a remote command for anything else: no hardening changes, uninstall, release, wipe, password change, or management toggle. A move (e) is not a command: it is this phone's own user taking over their old phone's state.
 3. **One class owns networking** (`net/ApiClient`), and one class owns the envelope crypto (`pairing/Envelope`), in the same way `DevicePolicyController` owns DPM.
 4. **Decoding is strict and total:** fixed schemas, a hard size cap before decryption, and decoders that never throw. No reflective JSON binding of untrusted input, no `WebView`, no dynamic code loading.
 5. HTTPS only, with `cleartextTrafficPermitted=false`. Certificate pinning is optional, because E2E already covers integrity and confidentiality.
@@ -705,6 +713,28 @@ Findings while deploying:
 - Ubuntu 24.04's fail2ban finds SSH's log lines through the `_COMM=sshd` journal match, so its `sshd` jail works although the unit is called `ssh.service`.
 - **Backups are on** (RUNBOOK §6): nightly at 03:00 UTC to the private bucket `killit-backups` in Frankfurt. The drill (§7.1) restored the first one with the live database's tables, rows, owners and grants. Only the `public` schema's owner differs, because the drill creates its database with `createdb` instead of `database.sql`. A probe confirmed that the server's key can add objects but can't overwrite or delete them.
 
+
+**2026-10-13, implementing Phase 5b**
+
+| # | Decision |
+|---|---|
+| O1 | APP_LIST icons are **16 × 16** raw RGBA, a quarter of a request's 32 × 32, so about seven apps fit in one envelope. |
+| O2 | The two phones of a move authenticate each other with **the pairing ceremony**: the new phone shows the code, the old one types it, and both show the safety code side by side. The first message after the link says which of the two it is (SPEC.md §6.5). |
+| O3 | **One new server route**, `POST /v1/links/handover`, copies the old phone's links to the new one. It needs the ceremony's link, so the new phone consented, and no schema change. |
+| O4 | **A protected phone's move keeps the old phone's decisions**: blocked stays blocked, approved stays approved, apps installed on the new phone before moving start blocked, and the new phone's system apps keep what was decided there unless the old phone blocked the same app. |
+| O5 | **The old protected phone stays frozen**: its blocks stay, nothing can be unblocked, it can't take guardians again, and only the 14-day release or a factory reset ends that. |
+| O6 | A master's MANAGE for an app with an open request **answers that request**. A remote block applies by package name whatever the certificate; a remote unblock only for the certificate the master saw. |
+| O7 | A slave answers **at most 4 list requests per master per hour** (unlimited in debug builds): each answer is dozens of envelopes from the slave's share of the server. |
+| O8 | A guarded phone moves only **with full control** (§3.10); a phone that only guards moves with its password. The old phone has 30 minutes to confirm once the new one is ready, and the new phone may give up only an hour after it said it was. |
+| O9 | A HANDOVER makes the protected side **forget that pairing's MANAGE sequence numbers**: they counted the old key's commands, and the new phone counts from 1. |
+| O10 | What a move hands over passes through `RemoteEffects` as **effect (e)**, which a phone with guardians refuses (§6.2). The rules for apps live in `NewPackagePolicy`, with the other default-blocking rules. |
+
+Findings while implementing Phase 5b:
+
+- **A device owner's suspensions outlive Killit.** DevicePolicyManager records the platform (`android`) as the suspending package, so neither `dpm remove-active-admin` nor uninstalling Killit lifts a block, and the shell can't either: on the Android 14 emulator an app blocked before the uninstall stayed suspended until it was itself uninstalled. Killit's own release unsuspends every app before it gives up device owner, so that path is fine, but the tampered screen's advice ("remove Killit as Device Owner … that releases every blocked app") doesn't hold there. To check in Phase 6.
+- **The freeze raced the screens** (found on emulators): the old phone cleared its pairings a moment before its durable copy recorded the freeze, and the open session saw the guardians go in between and got full control on screen. Actions re-read the freeze and stayed refused. The durable write now comes first.
+- The emulator images ship a few sample apps as user apps (in `/data/app`), so a move to an emulator blocks them as new: O4 working as meant.
+
 ---
 
 ## 12. Phased roadmap
@@ -716,7 +746,7 @@ Findings while deploying:
 | **3** ✅ | `protocol/` spec and test vectors. API: attestation registration, signed requests, invites with commit/reveal, links, mailbox, push. The deploy stack and runbook for `api.test.tamodak.org` (L3, L4). **Done 2026-10-12.** | Yes |
 | **4** ✅ | Killit: `INTERNET`, `net/` + `pairing/Envelope` (Keystore sign + Tink HPKE), remote pairing with the safety code, the new gate (Unlock / Requests), the pairs screen. **Done 2026-10-13, together with Phase 5 (M1).** | Yes |
 | **5** ✅ | UNBLOCK_APP (explanation, 3 chances), live UNLOCK_KILLIT, UNPAIR/LEAVE/NOTICE, the 30-day timer, the approval UI (60/40 Deny), nicknames and badges, last seen, daily reminders, block-more (D7) | Yes |
-| **5b** | Optional master app management (APP_LIST + MANAGE, `RemoteEffects` whitelist) and phone handover | Yes |
+| **5b** ✅ | Optional master app management (APP_LIST + MANAGE, `RemoteEffects` whitelist) and phone handover. **Done 2026-10-13.** | Yes |
 | **6** | Security review (threat-model walk-through, dependency audit, fuzzing envelope and invite decoders), then cut `tamodak.org` over | – |
 
 ---
@@ -757,7 +787,7 @@ Each use case is walked through with today's app plus the planned features. "→
 - A master drifting away shows up through "last seen" (§3.11). They either LEAVE, or the slave's UNPAIR runs its 30 days, provided nobody active denies.
 
 ### UC7 — Guardian changes phones
-- **Old phone still works:** HANDOVER from Requests (§3.10). Slaves see "moved to a new phone" and nothing else changes.
+- **Old phone still works:** "Move to a new phone" from *Phones I guard* › Settings (§3.10). Slaves see "moved to a new phone" and nothing else changes.
 - **Old phone lost:** re-pair from the new phone. The slave's UNPAIR of the dead key runs its 30 days, or the other masters approve it sooner.
 
 ### UC8 — Protected user wants out of Killit entirely
@@ -856,8 +886,10 @@ Status: ✅ decided · ❓ open (see the §11 question).
 
 ```
 Hub (first screen, no password; each card asks for the Killit password, J1)
+├── Moving from another phone? (password; only without pairings) → move wizard (§3.10)
 ├── My phone (password) ──────────────────────────────────────────────────────────────
 │   ├─ not Device Owner  → Setup wizard (Shizuku / QR / adb, today's SetupSection)
+│   ├─ frozen by a move  → where the protection went · Stop protecting this phone (§3.10)
 │   ├─ no guardians      → My phone (unlocked)
 │   ├─ has guardians     → My phone (locked)
 │   │    ├─ Unlock Killit → live waiting screen → My phone (unlocked)
@@ -1049,3 +1081,7 @@ The specification settles details this plan left open, and changes a few it had 
 12. **The mailbox has no cursor** (`?after=` is gone). Unacknowledged messages are simply delivered again, in the order received, and the phone's message-id check drops the duplicates.
 13. **Invites live 15 minutes to be joined, then 15 more to finish**, and both phones follow them with a long poll.
 14. **The test server accepts the debug signing certificate; a local development server can accept emulators.** The latter needs `KILLIT_ENV=development` plus an explicit setting that the test and production servers refuse to start with.
+15. **A move is a ceremony** (SPEC.md §6.5). The first message after the link is PAIR_OFFER for a pairing and MOVE_REQUEST for a move, and a phone that receives the other one ends the ceremony without either.
+16. **The old phone's state travels in pages** (MOVE_STATE, paged like APP_LIST) and the new phone checks the whole before it answers. It keeps the state staged, and puts it in use only once the old phone commits, after every HANDOVER has gone out.
+17. **A HANDOVER is signed with the old key**, which is what vouches for the new one. The pair id, names and counters stay; the new key gets a new badge, as it should (§3.2).
+18. **The server copies links for a move** (SPEC.md §7). It learns which phone handed its links to which, and nothing about the pairings.
