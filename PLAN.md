@@ -448,6 +448,7 @@ A slave **can't open its own Killit** while the server is unreachable, and can't
 | `DELETE /v1/invites/{id}` | Cancel ("They don't match") |
 | `POST /v1/links` | Confirm the safety code; the link exists once both have. **Routing only:** the phones decide pairing state. |
 | `GET /v1/links` / `DELETE /v1/links/{peer}` | List links with "last seen", or remove one |
+| `POST /v1/links/handover` | Moving phones (§3.10): copy the old phone's links to the new phone it linked with |
 | `POST /v1/messages` | Send envelopes to linked phones |
 | `GET /v1/messages` | Fetch the mailbox, with a long poll (`wait`) |
 | `POST /v1/messages/ack` | Acknowledge, after which the server deletes |

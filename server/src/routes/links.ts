@@ -1,8 +1,9 @@
 /**
  * Links (SPEC.md §7): permission for two phones to send each other envelopes.
  *
- * A link is created only when both participants of a revealed invite have confirmed the safety
- * code, and it says nothing about who guards whom. The phones decide pairing state themselves;
+ * A link is created when both participants of a revealed invite have confirmed the safety code,
+ * or copied to the new phone of a move, which itself linked to the old one through such an
+ * invite. It says nothing about who guards whom. The phones decide pairing state themselves;
  * deleting a link only stops routing (PLAN.md §8.1, "routing only").
  */
 import { sql } from 'kysely';
@@ -10,7 +11,7 @@ import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { FINGERPRINT_BYTES, MAX_LINKS, toBase64Url } from '@tamodak/protocol/api';
 import { deviceOf } from '../auth.ts';
 import { inviteChannel } from '../bus.ts';
-import { conflict, expired, notFound } from '../errors.ts';
+import { conflict, expired, notFound, notLinked } from '../errors.ts';
 import { Base64Url, StrictObject, Uuid, bytesOf } from './common.ts';
 import type { RouteDeps } from './deps.ts';
 import { UNFINISHED } from './invites.ts';
@@ -76,6 +77,47 @@ export const linkRoutes: FastifyPluginAsyncTypebox<RouteDeps> = async (app, deps
     const peer = await db.selectFrom('devices').select('fingerprint').where('id', '=', result.peerId).executeTakeFirstOrThrow();
     return { state: result.state, peer: toBase64Url(peer.fingerprint) };
   });
+
+  // A move (SPEC.md §7, §11.14): the old phone gives the new one its links, so its pairs can
+  // reach the new phone once they have its key. The new phone consented by taking part in the
+  // ceremony that linked the two, and its pairs by trusting the old phone that vouches for it.
+  app.post(
+    '/links/handover',
+    { schema: { body: StrictObject({ to: Base64Url(FINGERPRINT_BYTES) }) } },
+    async (request) => {
+      const device = deviceOf(request);
+      const toFp = bytesOf(request.body.to, FINGERPRINT_BYTES);
+      const copied = await db.transaction().execute(async (tx) => {
+        // Locking the new phone's row serialises two handovers to it, so its cap holds.
+        const target = await tx.selectFrom('devices').select('id').where('fingerprint', '=', Buffer.from(toFp)).forUpdate().executeTakeFirst();
+        if (target === undefined || target.id === device.id) throw notFound();
+        const peersOf = async (id: string): Promise<string[]> => {
+          const rows = await tx
+            .selectFrom('links')
+            .select(['device_lo', 'device_hi'])
+            .where((eb) => eb.or([eb('device_lo', '=', id), eb('device_hi', '=', id)]))
+            .execute();
+          return rows.map((row) => (row.device_lo === id ? row.device_hi : row.device_lo));
+        };
+        const callerPeers = await peersOf(device.id);
+        if (!callerPeers.includes(target.id)) throw notLinked([request.body.to]);
+        const targetPeers = new Set(await peersOf(target.id));
+        const fresh = callerPeers.filter((id) => id !== target.id && !targetPeers.has(id));
+        // Only the new phone's cap is checked. A pair keeps the old phone's link as well until the
+        // old phone deletes itself, which follows at once.
+        if (targetPeers.size + fresh.length > MAX_LINKS) throw conflict('link_limit');
+        if (fresh.length > 0) {
+          await tx
+            .insertInto('links')
+            .values(fresh.map((id) => linkKey(target.id, id)))
+            .onConflict((oc) => oc.doNothing())
+            .execute();
+        }
+        return fresh.length;
+      });
+      return { copied };
+    },
+  );
 
   app.get('/links', async (request) => {
     const device = deviceOf(request);

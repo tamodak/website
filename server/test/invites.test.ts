@@ -241,3 +241,80 @@ describe('links', () => {
     expect((await hub!.call('GET', '/v1/links')).body.links).toHaveLength(50);
   });
 });
+
+describe('handing links to a new phone', () => {
+  /** An old phone linked to `peerCount` pairs, and its new phone, linked to it by their own ceremony. */
+  async function moving(peerCount: number) {
+    const [old, fresh] = await phones(2);
+    const peers = await phones(peerCount);
+    for (const peer of peers) await pair(peer, old!);
+    await pair(fresh!, old!);
+    return { old: old!, fresh: fresh!, peers };
+  }
+
+  const peersOf = async (phone: PhoneClient) =>
+    ((await phone.call('GET', '/v1/links')).body.links as { peer: string }[]).map((link) => link.peer).sort();
+
+  it('copies every link of the old phone to the new one', async () => {
+    const { old, fresh, peers } = await moving(2);
+    const response = await old.call('POST', '/v1/links/handover', { to: fresh.deviceId });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ copied: 2 });
+    expect(await peersOf(fresh)).toEqual([old.deviceId, ...peers.map((peer) => peer.deviceId)].sort());
+    // The pairs can now reach the new phone, and keep the old phone's link until it goes.
+    for (const peer of peers) expect(await peersOf(peer)).toEqual([old.deviceId, fresh.deviceId].sort());
+  });
+
+  it('is idempotent', async () => {
+    const { old, fresh } = await moving(2);
+    await old.call('POST', '/v1/links/handover', { to: fresh.deviceId });
+    const again = await old.call('POST', '/v1/links/handover', { to: fresh.deviceId });
+    expect(again.body).toEqual({ copied: 0 });
+    expect(await peersOf(fresh)).toHaveLength(3);
+  });
+
+  it('leaves the copies in place once the old phone deletes itself', async () => {
+    const { old, fresh, peers } = await moving(1);
+    await old.call('POST', '/v1/links/handover', { to: fresh.deviceId });
+    expect((await old.call('DELETE', '/v1/devices/me')).status).toBe(204);
+    expect(await peersOf(fresh)).toEqual([peers[0]!.deviceId]);
+    expect(await peersOf(peers[0]!)).toEqual([fresh.deviceId]);
+  });
+
+  it('needs a link to the new phone', async () => {
+    const [old, stranger, peer] = await phones(3);
+    await pair(peer!, old!);
+    const response = await old!.call('POST', '/v1/links/handover', { to: stranger!.deviceId });
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: 'not_linked', peers: [stranger!.deviceId] });
+    expect(await peersOf(stranger!)).toEqual([]);
+  });
+
+  it('refuses an unknown phone, and the caller itself', async () => {
+    const { old } = await moving(1);
+    expect((await old.call('POST', '/v1/links/handover', { to: toBase64Url(randomBytes(32)) })).status).toBe(404);
+    expect((await old.call('POST', '/v1/links/handover', { to: old.deviceId })).status).toBe(404);
+  });
+
+  it('refuses to give the new phone more than 50 links, and then copies nothing', async () => {
+    const { old, fresh } = await moving(1);
+    // Fill the new phone's links directly, up to 49 with the old phone's.
+    const freshRow = await server.db.selectFrom('devices').select('id').where('fingerprint', '=', Buffer.from(fresh.phone.fp)).executeTakeFirstOrThrow();
+    for (let i = 0; i < 49; i++) {
+      const filler = await registeredPhone(server);
+      const fillerRow = await server.db.selectFrom('devices').select('id').where('fingerprint', '=', Buffer.from(filler.phone.fp)).executeTakeFirstOrThrow();
+      const [lo, hi] = [freshRow.id, fillerRow.id].sort();
+      await server.db.insertInto('links').values({ device_lo: lo!, device_hi: hi! }).execute();
+    }
+    const response = await old.call('POST', '/v1/links/handover', { to: fresh.deviceId });
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ error: 'conflict', state: 'link_limit' });
+    expect(await peersOf(fresh)).toHaveLength(50);
+  });
+
+  it('refuses a malformed fingerprint', async () => {
+    const { old } = await moving(1);
+    expect((await old.call('POST', '/v1/links/handover', { to: 'not-a-fingerprint' })).status).toBe(400);
+    expect((await old.call('POST', '/v1/links/handover', { to: toBase64Url(randomBytes(32)), extra: 1 })).status).toBe(400);
+  });
+});
