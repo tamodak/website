@@ -1,7 +1,9 @@
 # Runbook: api.test.tamodak.org
 
 How to set up, run, back up, restore and update the pairing server's test deployment. It runs with
-Docker on the Oracle Cloud instance: Ubuntu 24.04 LTS on the Always Free Ampere A1 shape (arm64).
+Docker on the Oracle Cloud instance: Ubuntu 24.04 LTS on an Always Free shape. Today that is the AMD
+`VM.Standard.E2.1.Micro` (x86_64, 1 GB of memory and a 2 GB swap file); the Ampere A1 shape (arm64)
+runs the same images with room to spare.
 
 Every command runs **on the server**, from `/opt/killit/website/deploy`, unless it says "on your
 computer". Nothing in this directory ever touches the server by itself.
@@ -12,7 +14,7 @@ computer". Nothing in this directory ever touches the server by itself.
 
 | Container | Image | Runs as | Reads | Network |
 |---|---|---|---|---|
-| `caddy` | Ubuntu 24.04 + Caddy 2.11 | uid 10004 | `Caddyfile` | ports 80 and 443 (the only ones open) |
+| `caddy` | Ubuntu 24.04 + Caddy 2.11 | uid 10004 | `Caddyfile`, and `placeholder/` for tamodak.org | ports 80 and 443 (the only ones open) |
 | `api-test` | Ubuntu 24.04 + Node 24 + the server | uid 10001 | its database URL, the invite-code key, the FCM key | Caddy only, plus the internet for FCM and Google's revocation list |
 | `migrate-test` | the API image | uid 10001 | the schema owner's URL | the database only. Runs at every start, then exits. |
 | `db-test` | Ubuntu 24.04 + PostgreSQL 16 | uid 10002 | the four role passwords (first start only) | an internal network with no route out |
@@ -74,9 +76,25 @@ Ubuntu's fail2ban package watches SSH out of the box.
 
 ### 2.4 The host firewall
 
-Oracle's Ubuntu image ships iptables rules that accept only SSH. Leave them as they are: Docker
-adds forwarding rules for the two ports it publishes, ahead of Oracle's reject rule. The OCI
-security list stays the outer wall. Check from outside once the stack runs (§4).
+Oracle's Ubuntu image ships iptables rules that accept only SSH, in `/etc/iptables/rules.v4`, which
+the `iptables-persistent` package loads at boot. Leave them as they are: Docker adds forwarding
+rules for the two ports it publishes, ahead of Oracle's reject rule. The OCI security list stays
+the outer wall. Check from outside once the stack runs (§4), and check that the rules are live:
+
+```bash
+sudo iptables -S INPUT      # ends with: -A INPUT -j REJECT --reject-with icmp-host-prohibited
+```
+
+If INPUT is empty, the package that loads the file is missing (the test server's was, until
+2026-10-13). Install it without letting it save the current, empty rules over Oracle's, then reboot:
+
+```bash
+printf '%s\n' 'iptables-persistent iptables-persistent/autosave_v4 boolean false' \
+  'iptables-persistent iptables-persistent/autosave_v6 boolean false' | sudo debconf-set-selections
+sudo apt-get install -y iptables-persistent
+```
+
+Never run `netfilter-persistent save`: it would write Docker's own rules into the file.
 
 ### 2.5 Docker
 
@@ -107,22 +125,15 @@ the name to resolve and ports 80 and 443 to be reachable.
 
 ### 3.1 The code
 
-`website/` has no remote yet. On your computer, bundle it:
-
-```bash
-git -C website bundle create /tmp/website.bundle --all
-scp /tmp/website.bundle <server>:/tmp/
-```
-
-On the server:
+The repository is public on GitHub, so the server reads it without any credential:
 
 ```bash
 sudo install -d -o "$USER" -g "$USER" /opt/killit
-git clone /tmp/website.bundle /opt/killit/website
+git clone https://github.com/tamodak/website.git /opt/killit/website
 cd /opt/killit/website/deploy
 ```
 
-Once the repository has a remote, `git clone` it into `/opt/killit/website` instead.
+Deploying stays a deliberate step taken on the server (§8): no CI job holds a key to it.
 
 ### 3.2 Configuration
 
@@ -132,7 +143,7 @@ cp .env.example .env && chmod 600 .env && nano .env
 
 | Value | Where it comes from |
 |---|---|
-| `ACME_EMAIL` | your address, for Let's Encrypt's expiry warnings |
+| `ACME_EMAIL` | the address of the Let's Encrypt account (here `info@tamodak.org`). Let's Encrypt no longer sends expiry warnings: Caddy renews by itself, and the uptime monitor (§10) notices if it can't. |
 | `TEST_ATTESTATION_CERT_DIGESTS` | the SHA-256 of each certificate Killit builds may be signed with, comma-separated. For a release APK: `apksigner verify --print-certs killit.apk`. For debug builds made on a computer: `keytool -list -v -keystore ~/.android/debug.keystore -storepass android`. The current development machine's debug certificate is `9C:D7:62:73:A6:9F:F2:00:86:33:EC:22:E5:96:0A:95:DB:5E:C1:C3:68:95:04:AC:7D:8E:F3:90:B8:4A:05:C4`. |
 | `TEST_FCM_CREDENTIALS_FILE` | empty for now; see §5 |
 | `COMPOSE_PROFILES`, `BACKUP_*`, `OCI_*` | empty for now; see §6 |
@@ -169,6 +180,14 @@ sudo docker compose ps          # db-test and api-test healthy, migrate-test "Ex
 curl https://api.test.tamodak.org/healthz      # {"status":"ok"}
 ```
 
+On a 1 GB micro instance, build the images one at a time instead, so the builds don't compete for
+memory. It takes about 12 minutes, and the backup image is built ahead of §6:
+
+```bash
+for s in caddy db-test api-test; do sudo docker compose build --pull "$s"; done
+sudo docker compose --profile backups build --pull backup-test
+```
+
 From your computer, also check that nothing else answers:
 
 ```bash
@@ -194,10 +213,10 @@ opens or polls (PLAN.md §7).
 2. In the Google Cloud console for that project, make sure the **Firebase Cloud Messaging API (V1)**
    is enabled. Under APIs & Services → Credentials, restrict the app's Android API key to the
    package `org.tamodak.killit` and its signing certificates' SHA-1.
-3. Under IAM & Admin → Service accounts, create a service account `killit-push` with only the role
-   **Firebase Cloud Messaging API Admin**. Firebase's default "Admin SDK" account
-   (`firebase-adminsdk-…`) can do much more, so don't install its key on a server. Then use
-   Keys → Add key → JSON.
+3. Under IAM & Admin → Service accounts, create a service account with only the role
+   **Firebase Cloud Messaging API Admin** (the test server's is `fcm-admin-sender`). Firebase's
+   default "Admin SDK" account (`firebase-adminsdk-…`) can do much more, so don't install its key
+   on a server. Then use Keys → Add key → JSON.
 4. Install the key and switch push on:
 
    ```bash
@@ -324,9 +343,9 @@ If the whole instance is lost: set up a new one (§2), install the stack (§3) w
 
 ```bash
 sudo docker compose run --rm backup-test backup.sh     # a fresh backup first
-git -C /opt/killit/website pull                        # or clone a new bundle
+git -C /opt/killit/website pull
 sudo docker tag killit/api:local killit/api:previous
-sudo docker compose build --pull
+sudo docker compose build --pull                       # one image at a time on a micro instance (§4)
 sudo docker compose up -d                              # migrate-test runs before the API starts
 ```
 

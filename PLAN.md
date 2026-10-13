@@ -1,6 +1,6 @@
 # tamodak.org — Website, pairing server, and Killit pairing plan
 
-Status: **draft v11**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14, the UI/UX design in §15, and the protocol in §16 and `protocol/SPEC.md`. No product questions are open. **Phases 1, 3, 4 and 5 are implemented**: Killit's default-blocking (2026-10-05); the protocol, the pairing server and its deploy stack (2026-10-12); and pairing in Killit, push included (2026-10-13). Next is Phase 5b. See §11 and §12.
+Status: **draft v12**. Every product decision so far is folded in (§3, §11). Use cases are in §13, edge cases in §14, the UI/UX design in §15, and the protocol in §16 and `protocol/SPEC.md`. No product questions are open. **Phases 1, 3, 4 and 5 are implemented**: Killit's default-blocking (2026-10-05); the protocol, the pairing server and its deploy stack (2026-10-12); and pairing in Killit, push included (2026-10-13). **`api.test.tamodak.org` is live** (2026-10-13), and tamodak.org shows a placeholder until Phase 2. Next is Phase 5b. See §11 and §12.
 
 This covers three things that have to be designed together:
 
@@ -495,12 +495,12 @@ website/
     RUNBOOK.md       provision, deploy, back up, restore, update, rotate secrets
 ```
 
-- The server is **Ubuntu 24.04 LTS on the Ampere A1 (arm64) Always Free shape**, and runs the stack with **Docker, on images built from Ubuntu 24.04** (L4). The images are built on the server itself, so natively for arm64.
+- The server is **Ubuntu 24.04 LTS on an Always Free shape**: today the AMD `VM.Standard.E2.1.Micro` (x86_64, 1 GB, N1); the Ampere A1 (arm64) is the roomier choice. It runs the stack with **Docker, on images built from Ubuntu 24.04** (L4). The images are built on the server itself, so natively for its architecture.
 - Every container runs as its own non-root user, from a read-only filesystem, with no capabilities. Only Caddy publishes ports (80 and 443), and the database sits on an internal network with no route out.
 - **Cutover:**
-  1. Stand up `api.tamodak.org`, `test.tamodak.org` and `api.test.tamodak.org` while the old blog stays up. `api.test` comes first (RUNBOOK.md).
-  2. When the site is ready, point `tamodak.org` at `web/dist`.
-  3. **Delete the blog** (F4).
+  1. Stand up `api.tamodak.org`, `test.tamodak.org` and `api.test.tamodak.org`. `api.test` came first (RUNBOOK.md), on 2026-10-13.
+  2. When the site is ready, point `tamodak.org` at `web/dist`, in place of the placeholder page (N2).
+  3. **Delete the blog** (F4): done on 2026-10-13, ahead of the site, since nothing used it (N2).
 
 ---
 
@@ -687,6 +687,22 @@ Findings while implementing Phases 4 and 5:
 - **UNPAIR timers are checked after the inbox** on every sync: a denial that was already waiting on the server stops a timer that has run out, while an unreachable server still can't hold a timer back (§6.4).
 - **firebase-messaging 26 registers apps by Firebase Installation ID.** `getToken`/`onNewToken` are deprecated for `register()`/`onRegistered`, and FCM v1 deprecated `message.token` for `message.fid`. The server stores and addresses FIDs (SPEC.md §9). The FID API is opt-in: without the manifest flag `firebase_messaging_installation_id_enabled`, `register()` throws "API disabled". The Firebase project is `killit-27b49` (deploy/RUNBOOK.md §5); a real push was delivered to an emulator end to end on 2026-10-13.
 - Toolchain limits: OkHttp 5.5 needs compileSdk 37 (5.4 is used), kotlinx.serialization 1.10 needs Kotlin 2.3 (1.9 is used), and AGP 9 needs `resValues` switched on for the Firebase resources.
+
+**2026-10-13, deploying `api.test.tamodak.org`**
+
+| # | Decision |
+|---|---|
+| N1 | The test server runs on the instance that already existed: the Always Free AMD `VM.Standard.E2.1.Micro` (x86_64, 1 GB of memory, a 2 GB swap file), not an Ampere A1. L4's Ubuntu-based images are unchanged. They build there one at a time (about 12 minutes), and the running stack uses about 150 MB. |
+| N2 | The old blog is **deleted now** (F4), with nginx and certbot, so Caddy owns ports 80 and 443 as planned. Until the site exists, `tamodak.org` shows a one-page placeholder (`deploy/placeholder/`) with `security.txt`, and `www` redirects to it. `api.tamodak.org` stays dark until the cutover: no release signing key exists yet. |
+| N3 | `website` is **public** on GitHub (`tamodak/website`), like Killit, Hisar and the Desktop Authenticator: the protocol and the server's privacy claims are meant to be checkable. The server clones it over HTTPS with no credential, and **deploys stay manual**: no CI job holds a key to the server. |
+| N4 | The FCM key belongs to a service account (`fcm-admin-sender`) whose only role is *Firebase Cloud Messaging API Admin*. Of 13 permissions probed, it holds only `cloudmessaging.messages.create`. The Admin SDK key stays off the server. |
+
+Findings while deploying:
+
+- **The host firewall was off.** `iptables-persistent`, the package that loads Oracle's `rules.v4` at boot, was missing, so the OCI security list had been the only wall (§6.6 asks for two). It is reinstalled without letting it overwrite the file. After a reboot the rules are live, with Docker's forwarding rules ahead of Oracle's reject rule (RUNBOOK §2.4).
+- Turhost's zone tells resolvers to remember a missing name for a day (SOA minimum 86400 s), so a name looked up before its record exists can stay invisible on some resolvers for up to a day. Let's Encrypt asks the authoritative servers, so certificates are unaffected.
+- Ubuntu 24.04's fail2ban finds SSH's log lines through the `_COMM=sshd` journal match, so its `sshd` jail works although the unit is called `ssh.service`.
+- **Backups are on** (RUNBOOK §6): nightly at 03:00 UTC to the private bucket `killit-backups` in Frankfurt. The drill (§7.1) restored the first one with the live database's tables, rows, owners and grants. Only the `public` schema's owner differs, because the drill creates its database with `createdb` instead of `database.sql`. A probe confirmed that the server's key can add objects but can't overwrite or delete them.
 
 ---
 
