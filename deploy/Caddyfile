@@ -1,8 +1,9 @@
 # The public front of the server (PLAN.md §10, decision I2). Caddy obtains and renews the TLS
 # certificates and proxies to the API, which listens only on the compose network.
 #
-# Only the test API is live now. api.tamodak.org, tamodak.org and test.tamodak.org get their own
-# blocks at the cutover (PLAN.md §12, Phase 6).
+# Live now: the test API, and a placeholder page on tamodak.org until the site (PLAN.md §9,
+# Phase 2) replaces it. api.tamodak.org and test.tamodak.org get their own blocks at the cutover
+# (PLAN.md §12, Phase 6).
 
 {
 	email {$ACME_EMAIL}
@@ -24,4 +25,23 @@
 	# Say nothing about the software behind the name.
 	header -Server
 	header -Via
+}
+
+# The placeholder (placeholder/): static files, no scripts, so the policy can forbid everything
+# but its own stylesheet (PLAN.md §9: no trackers, no third-party scripts, a strict CSP).
+tamodak.org {
+	root * /srv/placeholder
+	file_server
+	header {
+		-Server
+		Content-Security-Policy "default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+}
+
+# A temporary redirect, so browsers keep nothing that the real site might have to undo.
+www.tamodak.org {
+	redir https://tamodak.org{uri}
+	header -Server
 }

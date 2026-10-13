@@ -37,6 +37,7 @@ services:
       API_TEST_HOST: ${API_TEST_HOST:-api.test.tamodak.org}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./placeholder:/srv/placeholder:ro
       - caddy-data:/data
       - caddy-config:/config
     tmpfs: [/tmp]
