@@ -11,7 +11,7 @@
 <main class="doc">
   <p class="crumbs"><a href="/">tamodak</a> / Hisar</p>
   <h1>Hisar data safety</h1>
-  <p class="updated">Last updated 13 October 2026</p>
+  <p class="updated">Last updated 21 October 2026</p>
 
   <p>Hisar's Data safety section on Google Play says:</p>
   <ul>
@@ -33,6 +33,9 @@
     <li><strong>Things you start yourself.</strong> Search suggestions send what you type in the
       address bar to your search engine, and you can turn them off. Image search sends the one photo
       you choose to Google Lens. Google's rules exclude transfers you start and expect.</li>
+    <li><strong>Downloads that are the same for everyone.</strong> The picture filter's models (once,
+      from GitHub) and the ad blocker's filter lists (kept up to date from their publishers) are
+      public files. Hisar sends nothing about you to fetch them.</li>
   </ul>
 
   <h2>Type by type</h2>
@@ -67,8 +70,7 @@
 
     <dt>Searches and typed text</dt>
     <dd>Searches go to your search engine (Google, Bing or DuckDuckGo). If suggestions are on, typed
-      text goes to it after a pause in typing. Text that contains a blocked word is never sent, and a
-      blocked search never leaves the phone.</dd>
+      text goes to it after a pause in typing. Results and suggestions are filtered on the phone.</dd>
 
     <dt>Crash logs and diagnostics</dt>
     <dd>Hisar sends none. Android itself may send crash reports to Google Play if you allowed that in
@@ -88,8 +90,8 @@
 
   <h2>Security</h2>
   <ul>
-    <li>Hisar's own connections (suggestions, image search, model downloads) use HTTPS, and the
-      picture filter's model files are checked against their SHA-256 checksums.</li>
+    <li>Hisar's own connections (suggestions, image search, model downloads, filter list updates) use
+      HTTPS, and the picture filter's model files are checked against their SHA-256 checksums.</li>
     <li>Your data stays in Hisar's private storage and is left out of Android backups and transfers
       to a new phone. Uninstalling Hisar deletes it.</li>
     <li>Hisar is open source. Its <a href="https://github.com/tamodak/Hisar">code</a> shows exactly

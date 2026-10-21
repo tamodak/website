@@ -11,7 +11,7 @@
 <main class="doc">
   <p class="crumbs"><a href="/">tamodak</a> / Hisar</p>
   <h1>Hisar privacy policy</h1>
-  <p class="updated">Last updated 13 October 2026</p>
+  <p class="updated">Last updated 21 October 2026</p>
 
   <p>Hisar is a safe browser for Android made by tamodak. This policy explains what happens to your
   data when you use it.</p>
@@ -26,9 +26,10 @@
     <li>Your browsing history, bookmarks, open tabs and tab groups, saved offline pages and
       settings.</li>
     <li>Cookies, site data and cached files that websites store.</li>
-    <li>All filtering. Addresses, search words, page text and pictures are checked on the phone. A
-      blocked search or site is stopped before any request is made, so it never leaves the phone.
-      The word and site lists are built into the app.</li>
+    <li>All filtering. Addresses, page text, search results and pictures are checked on the phone. A
+      blocked site is stopped before any request is made, so it never leaves the phone. Searches go
+      out, and what comes back is filtered. The word and site lists are built into the app; the ad
+      blocker's lists also update themselves (see below).</li>
     <li>The picture filter. Its AI models run on the phone, and no picture you see is sent anywhere
       to be judged.</li>
   </ul>
@@ -42,13 +43,13 @@
   <h3>Websites you visit</h3>
   <p>Like every browser, Hisar connects to the websites you open. They receive what any website
   receives, such as your IP address, the browser's version and the cookies they set, and their own
-  privacy policies apply. Hisar also asks Google, Bing, DuckDuckGo and YouTube to use their safe or
-  restricted modes.</p>
+  privacy policies apply. Hisar also asks Google, Bing, DuckDuckGo, Yahoo and Brave Search for their
+  strict safe search.</p>
 
   <h3>Your search engine</h3>
   <p>Searches go to the engine you choose: Google (the default), Microsoft Bing or DuckDuckGo. By
   default, Hisar also sends what you type in the address bar to that engine to get suggestions,
-  after a short pause in typing. Text that contains a blocked word is never sent. You can turn
+  after a short pause in typing. Suggestions that contain a blocked word aren't shown. You can turn
   suggestions off with <em>Settings → Autocomplete searches and URLs</em>.</p>
 
   <h3>Image search (Google Lens)</h3>
@@ -76,6 +77,16 @@
   <a href="https://github.com/tamodak/Hisar/releases">Hisar releases on GitHub</a>. It uses
   Android's download manager and checks each file's SHA-256 checksum before using it. As with any
   download, GitHub sees your IP address.</p>
+
+  <h3>Ad blocker filter lists</h3>
+  <p>Hisar blocks ads with uBlock Origin, which is built into the app and decides on the phone what to
+  block. It comes with its filter lists and keeps them up to date by downloading new versions from
+  their publishers, some every 12 hours and others every few days: uBlock Origin's own lists and
+  EasyList from GitHub, Cloudflare and jsDelivr; the Online Malicious URL Blocklist from GitHub,
+  GitLab and Cloudflare; Peter Lowe's list from pgl.yoyo.org; the Public Suffix List from
+  publicsuffix.org; and, if your phone's language has a list of its own, that list from its
+  publisher (for Turkish, AdGuard). These downloads are the same for every user and carry nothing
+  about you or what you browse. As with any download, those servers see your IP address.</p>
 
   <h3>Google Play</h3>
   <p>Google Play installs and updates Hisar under Google's own privacy policy. Through the Play
@@ -106,7 +117,8 @@
   <ul>
     <li>Your data stays in Hisar's private storage, protected by Android's app sandbox and left out of
       backups.</li>
-    <li>Hisar's own connections (search suggestions, image search, model downloads) use HTTPS.</li>
+    <li>Hisar's own connections (search suggestions, image search, model downloads and filter list
+      updates) use HTTPS.</li>
     <li>Hisar is open source under the GPL-3.0 licence. You can check every claim on this page in its
       <a href="https://github.com/tamodak/Hisar">source code</a>.</li>
     <li>To report a security problem, write to <a href="mailto:info@tamodak.org">info@tamodak.org</a>
@@ -121,7 +133,11 @@
   <a href="https://policies.google.com/privacy">Google</a>,
   <a href="https://privacy.microsoft.com/privacystatement">Microsoft</a>,
   <a href="https://duckduckgo.com/privacy">DuckDuckGo</a>,
-  <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub</a> and
+  <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub</a>,
+  <a href="https://about.gitlab.com/privacy/">GitLab</a>,
+  <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare</a>,
+  <a href="https://www.jsdelivr.com/terms/privacy-policy">jsDelivr</a>,
+  <a href="https://adguard.com/en/privacy.html">AdGuard</a> and
   <a href="https://www.mozilla.org/privacy/">Mozilla</a>.</p>
 
   <h2>Changes</h2>
