@@ -18,3 +18,7 @@ coverage/
 # The deployment's own values (deploy/RUNBOOK.md): secret files, and local backup drills
 deploy/secrets/
 deploy/local-backups/
+
+# Agent task files: temporary, never committed
+/agent-prompts/
+/agent-reports/

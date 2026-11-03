@@ -1,8 +1,9 @@
 # tamodak.org
 
 The pairing server for [Killit](https://github.com/tamodak/Killit), the protocol it speaks, its
-deployment, and (later) the tamodak.org site. [PLAN.md](PLAN.md) is the plan and the record of
-every decision.
+deployment, and (later) the tamodak.org site. How it works, and every decision: [docs/](docs/README.md).
+[PLAN.md](PLAN.md), where the design was first worked out, now maps its old sections to their new
+places.
 
 | Directory | What |
 |---|---|
