@@ -12,7 +12,7 @@ import type { RouteDeps } from './deps.ts';
 import { attestationRejected, badRequest, expired, unauthorized, unavailable } from '../errors.ts';
 import { Base64Url, StrictObject, bytesOf } from './common.ts';
 
-/** A challenge is valid for 10 minutes (SPEC.md §5.1); not shortened in debug builds (PLAN.md §11). */
+/** A challenge is valid for 10 minutes (SPEC.md §5.1); not shortened in debug builds (Killit/docs/requests.md, "Durations per build type"). */
 const CHALLENGE_LIFETIME_MILLIS = 10 * 60 * 1000;
 const CHALLENGE_BYTES = 32;
 /** A DER certificate in an attestation chain is a few hundred bytes to ~1.5 KB. */

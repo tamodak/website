@@ -1,6 +1,6 @@
-# The server stack for api.test.tamodak.org (PLAN.md §10), run with Docker on the Ubuntu 24.04
-# server. RUNBOOK.md explains every step; .env and secrets/ hold this deployment's own values and
-# never go into git.
+# The server stack for api.test.tamodak.org (docs/infrastructure.md §10), run with Docker on the
+# Ubuntu 24.04 server. RUNBOOK.md explains every step; .env and secrets/ hold this deployment's own
+# values and never go into git.
 #
 #   caddy          TLS and the only open ports (80, 443)
 #   api-test       the pairing API, reachable only through Caddy
@@ -10,7 +10,7 @@
 #
 # Every image is built here from Ubuntu 24.04, every container runs as a non-root user from a
 # read-only filesystem with no capabilities, and each reads only its own secrets. The services
-# are suffixed -test so the production set can join them at the cutover (PLAN.md §12, Phase 6).
+# are suffixed -test so the production set can join them at the cutover (Phase 6).
 
 name: killit
 

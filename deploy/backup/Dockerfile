@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 #
-# Nightly encrypted backups (PLAN.md §6.6): pg_dump, encrypted with age to a public key whose
-# private half never touches the server, streamed to OCI Object Storage with rclone. Every tool
-# comes from Ubuntu 24.04's archive.
+# Nightly encrypted backups (docs/infrastructure.md §6.6): pg_dump, encrypted with age to a public
+# key whose private half never touches the server, streamed to OCI Object Storage with rclone. Every
+# tool comes from Ubuntu 24.04's archive.
 
 FROM ubuntu:24.04
 RUN apt-get update \

@@ -23,7 +23,7 @@ computer". Nothing in this directory ever touches the server by itself.
 Every container runs from a read-only filesystem with no Linux capabilities. Each reads only its
 own secrets: the files are owned by that container's uid, with mode 400.
 
-The database has four roles, each limited to its job (PLAN.md §6.6):
+The database has four roles, each limited to its job (docs/infrastructure.md §6.6):
 
 | Role | Can | Used by |
 |---|---|---|
@@ -42,7 +42,7 @@ The database has four roles, each limited to its job (PLAN.md §6.6):
    (2 OCPU and 12 GB are plenty; Always Free covers up to 4 and 24), with a public IPv4 address.
 2. In its subnet's security list (or a network security group), allow ingress on **TCP 22 from your
    own IP only**, and on **TCP 80 and 443 from anywhere**. Remove any other ingress rule. These are
-   the first of the two firewall layers (PLAN.md §6.6).
+   the first of the two firewall layers (docs/infrastructure.md §6.6).
 
 ### 2.2 SSH
 
@@ -204,7 +204,7 @@ status and duration. No bodies, codes, tokens or IP addresses are logged, and Do
 ## 5. Push (Firebase Cloud Messaging)
 
 Until this is done the API runs without push. Phones then learn of new messages when Killit
-opens or polls (PLAN.md §7).
+opens or polls (Killit/docs/push-and-sync.md §7).
 
 1. The Firebase project is **`killit-27b49`**, with the Android app `org.tamodak.killit`. Its
    `google-services.json` is committed in the Killit repository (`app/google-services.json`). The
@@ -405,13 +405,13 @@ next start. For `killit_backup` it is `test_backup_pgpass`; recreate `backup-tes
 
 - **Uptime:** an external monitor (UptimeRobot, healthchecks.io, …) requesting
   `https://api.test.tamodak.org/healthz` every few minutes. A protected phone can't open Killit
-  while the server is down (PLAN.md §6.4).
+  while the server is down (docs/server-trust-model.md §6.4).
 - **Backups:** the heartbeat of §6.3, and the drill of §7.1.
 - **Disk:** `df -h /` and `sudo docker system df`. The mailbox is capped per phone (SPEC.md §13).
 - **Idle reclamation:** Oracle may reclaim an Always Free instance that stays nearly idle for seven
-  days (PLAN.md §6.4). A low-traffic test server can look idle. Upgrading the tenancy to Pay As You
-  Go keeps the Always Free resources free and, per Oracle's documentation, exempts them from idle
-  reclamation.
+  days (docs/server-trust-model.md §6.4). A low-traffic test server can look idle. Upgrading the
+  tenancy to Pay As You Go keeps the Always Free resources free and, per Oracle's documentation,
+  exempts them from idle reclamation.
 
 ---
 

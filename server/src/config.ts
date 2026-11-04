@@ -1,6 +1,6 @@
 /**
- * Server configuration, read once from the environment at startup (PLAN.md §6.6: secrets live in
- * an env file outside git).
+ * Server configuration, read once from the environment at startup (docs/infrastructure.md §6.6:
+ * secrets live in an env file outside git).
  *
  * Every value is validated here, and a bad configuration stops the server before it listens, with
  * every problem listed at once. Secrets may be given inline (`NAME`) or as a file path
@@ -32,7 +32,7 @@ export interface Config {
   readonly environment: Environment;
   readonly host: string;
   readonly port: number;
-  /** The application role's connection string: data access only, no DDL (PLAN.md §6.6). */
+  /** The application role's connection string: data access only, no DDL (docs/infrastructure.md §6.6). */
   readonly databaseUrl: string;
   /** The API host requests must be signed for (SPEC.md §4.2). */
   readonly audience: string;

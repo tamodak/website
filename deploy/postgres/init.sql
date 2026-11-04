@@ -1,6 +1,6 @@
 -- Run once by entrypoint.sh when the cluster is created: the roles, then the database.
 --
--- Four roles, each with only what its job needs (PLAN.md §6.6):
+-- Four roles, each with only what its job needs (docs/infrastructure.md §6.6):
 --   killit_owner   owns the schema; only the migration job connects as it.
 --   killit_app     reads and writes rows; the API. Table grants come from the migrations.
 --   killit_backup  reads everything, writes nothing; the nightly pg_dump.

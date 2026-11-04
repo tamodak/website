@@ -1,5 +1,6 @@
 /**
- * Assembles the Fastify application: plugins, hooks, routes and error mapping (PLAN.md §6.6).
+ * Assembles the Fastify application: plugins, hooks, routes and error mapping
+ * (docs/infrastructure.md §6.6).
  *
  * Logging records the method, route pattern, status and duration of each request, and nothing
  * else: no bodies, no headers, no query strings (which can hold device ids), no IP addresses.

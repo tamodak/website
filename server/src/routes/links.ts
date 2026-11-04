@@ -4,7 +4,7 @@
  * A link is created when both participants of a revealed invite have confirmed the safety code,
  * or copied to the new phone of a move, which itself linked to the old one through such an
  * invite. It says nothing about who guards whom. The phones decide pairing state themselves;
- * deleting a link only stops routing (PLAN.md §8.1, "routing only").
+ * deleting a link only stops routing (SPEC.md §7, "routing only").
  */
 import { sql } from 'kysely';
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
@@ -55,7 +55,7 @@ export const linkRoutes: FastifyPluginAsyncTypebox<RouteDeps> = async (app, deps
       const key = linkKey(row.creator, row.joiner);
       const existing = await tx.selectFrom('links').select('created_at').where('device_lo', '=', key.device_lo).where('device_hi', '=', key.device_hi).executeTakeFirst();
       if (existing === undefined) {
-        // The cap is per phone, counted on both ends (PLAN.md §3.1: a technical cap against abuse).
+        // The cap is per phone, counted on both ends (Killit/docs/pairing.md §3.1: a technical cap against abuse).
         for (const id of [row.creator, row.joiner]) {
           const { count } = await tx
             .selectFrom('links')

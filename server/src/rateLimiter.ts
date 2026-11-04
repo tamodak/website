@@ -1,10 +1,10 @@
 /**
  * Per-device rate limits, applied after a request is authenticated (SPEC.md §13).
  *
- * Per-IP limits run before authentication in `@fastify/rate-limit`. These can't: keying a limit
- * on an unauthenticated device header would let anyone who knows a phone's fingerprint use up
- * that phone's budget. Memory only, like the bus: one process (PLAN.md §10), and a restart that
- * forgets the counters only makes limits briefly looser.
+ * Per-IP limits run before authentication in `@fastify/rate-limit`. These can't: keying a limit on
+ * an unauthenticated device header would let anyone who knows a phone's fingerprint use up that
+ * phone's budget. Memory only, like the bus: one process (docs/pairing-server.md §8), and a restart
+ * that forgets the counters only makes limits briefly looser.
  */
 
 interface Bucket {

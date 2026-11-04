@@ -16,7 +16,7 @@ CREATE TABLE devices (
   -- The Firebase Installation ID FCM reaches the phone by (SPEC.md §9), once it sent one.
   fcm_fid        text        CHECK (octet_length(fcm_fid) BETWEEN 1 AND 4096),
   created_at     timestamptz NOT NULL DEFAULT now(),
-  -- Only the day, so "last seen" stays coarse even in a database dump (PLAN.md §3.11).
+  -- Only the day, so "last seen" stays coarse even in a database dump (Killit/docs/pairing.md §3.11).
   last_seen_on   date        NOT NULL DEFAULT current_date
 );
 

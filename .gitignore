@@ -6,7 +6,7 @@ node_modules/
 dist/
 coverage/
 
-# Secrets never go in git (§6.6); only *.example templates are tracked
+# Secrets never go in git (docs/infrastructure.md §6.6); only *.example templates are tracked
 .env
 .env.*
 !.env.example

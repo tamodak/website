@@ -1,6 +1,7 @@
 /**
- * "The server has no decryption code at all" (PLAN.md §8), as a test: no server source may import
- * the protocol's end-to-end entry point or reach into its sources. Only tests act as phones.
+ * "The server has no decryption code at all" (docs/pairing-server.md §8), as a test: no server
+ * source may import the protocol's end-to-end entry point or reach into its sources. Only tests act
+ * as phones.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';

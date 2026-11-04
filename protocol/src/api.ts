@@ -4,7 +4,7 @@
  *
  * Nothing reachable from here can open an envelope. The server imports only this entry, and
  * `server/test/boundaries.test.ts` fails if any server source imports anything else from this
- * package (PLAN.md §8: "the server has no decryption code at all").
+ * package (docs/pairing-server.md §8: "the server has no decryption code at all").
  */
 export * from './apiAuth.ts';
 export * from './bytes.ts';

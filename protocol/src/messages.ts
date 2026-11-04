@@ -182,7 +182,7 @@ export interface AppRef {
   readonly certDigest: Uint8Array;
 }
 
-/** An app with what a guardian sees of it (PLAN.md §5.4). */
+/** An app with what a guardian sees of it (Killit/docs/security-model.md §5.4). */
 export interface AppInfo extends AppRef {
   readonly label: string;
   /** The installer's package name, or empty when unknown or sideloaded. */

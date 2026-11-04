@@ -2,9 +2,9 @@
  * Wake-ups for long polls (SPEC.md §6.2 and §8): a request waiting for news is woken as soon as
  * something it cares about changes, instead of polling the database.
  *
- * The server runs as a single process on one small machine (PLAN.md §10), so an in-process
- * emitter is enough. Running several processes would need Postgres LISTEN/NOTIFY here instead;
- * nothing else would change, because waiters always re-read the database after waking.
+ * The server runs as a single process on one small machine (docs/pairing-server.md §8), so an
+ * in-process emitter is enough. Running several processes would need Postgres LISTEN/NOTIFY here
+ * instead; nothing else would change, because waiters always re-read the database after waking.
  */
 import { EventEmitter } from 'node:events';
 

@@ -6,7 +6,7 @@
  * What a successful result proves: a key generated inside a TEE or StrongBox, by an app the
  * platform identified as `org.tamodak.killit` signed with one of our certificates, in answer to a
  * challenge this server issued. That is what keeps scripts and emulators off the production API
- * (PLAN.md §6.1, "Fake clients").
+ * (Killit/docs/security-model.md §6.1, "Fake clients").
  */
 import { X509Certificate, createHash, type KeyObject } from 'node:crypto';
 import * as pkijs from 'pkijs';

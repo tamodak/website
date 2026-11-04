@@ -7,10 +7,11 @@
  * Applications": an RS256-signed JWT is exchanged for an access token, which is cached until
  * shortly before it expires.
  *
- * Why this adds no risk on the phones: Killit acts on no field of a push (PLAN.md §6.2 rule 6), so
- * even a stolen credential could only make phones fetch their mailbox. On the server, TLS
- * certificates are always verified, redirects are refused (a token request is never forwarded
- * anywhere), every request has a timeout, and neither the credential nor any token is logged.
+ * Why this adds no risk on the phones: Killit acts on no field of a push
+ * (Killit/docs/security-model.md §6.2 rule 6), so even a stolen credential could only make phones
+ * fetch their mailbox. On the server, TLS certificates are always verified, redirects are refused
+ * (a token request is never forwarded anywhere), every request has a timeout, and neither the
+ * credential nor any token is logged.
  */
 import { createPrivateKey, sign, type KeyObject } from 'node:crypto';
 import { readFileSync } from 'node:fs';

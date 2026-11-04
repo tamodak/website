@@ -100,7 +100,7 @@ export function makeAuthenticate(deps: AuthDeps): (request: FastifyRequest) => P
     const wait = limiter.take(`requests:${device.id}`, 1, config.rateLimits.requestsPerDevicePerMinute, 60_000);
     if (wait > 0) throw rateLimited(wait);
 
-    // Last seen is kept to the day (PLAN.md §3.11), so this writes at most once a day per phone.
+    // Last seen is kept to the day (Killit/docs/pairing.md §3.11), so this writes at most once a day per phone.
     await db
       .updateTable('devices')
       .set({ last_seen_on: sql<string>`current_date` })

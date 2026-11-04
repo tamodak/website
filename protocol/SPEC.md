@@ -2,11 +2,11 @@
 
 Status: **draft for review** (Phase 3, 2026-10-12; app management and moving phones added in Phase 5b, 2026-10-13). It is normative for Killit and for the tamodak.org server.
 
-PLAN.md explains the product and *why* (§2–§6). This document fixes *the bytes*: what is signed, encrypted, sent and checked. Where the two disagree, this document wins, and PLAN.md §16 lists every refinement it makes.
+The docs explain the product and *why* (`docs/` and `Killit/docs/`, §2–§6). This document fixes *the bytes*: what is signed, encrypted, sent and checked. Where the two disagree, this document wins, and docs/protocol-design.md §16.1 lists every refinement it makes.
 
 The test vectors in [`vectors/`](vectors/) belong to this specification. The TypeScript reference implementation in [`src/`](src/) generates them, the server's tests use them, and Killit's tests must reproduce them. If an implementation disagrees with a vector, that is a bug. If this text and a vector disagree, both get fixed before anything ships.
 
-**Terms.** A *guardian* is PLAN.md's master and a *protected phone* is its slave (decision E5). A *phone* is one Killit installation with its own identity (§3). A *pairing* is one guardian–protected relationship between two phones. Two phones can have two pairings, one in each direction (A2). *Management* is a protected phone's setting that lets its guardians see and change which of its apps are blocked (PLAN.md §3.8). A *move* hands every pairing of an *old* phone to a *new* one (PLAN.md §3.10).
+**Terms.** A *guardian* is PLAN.md's master and a *protected phone* is its slave (decision E5). A *phone* is one Killit installation with its own identity (§3). A *pairing* is one guardian–protected relationship between two phones. Two phones can have two pairings, one in each direction (A2). *Management* is a protected phone's setting that lets its guardians see and change which of its apps are blocked (Killit/docs/app-management.md §3.8). A *move* hands every pairing of an *old* phone to a *new* one (Killit/docs/moving-to-a-new-phone.md §3.10).
 
 ---
 
@@ -30,7 +30,7 @@ The test vectors in [`vectors/`](vectors/) belong to this specification. The Typ
 
 ### 1.2 Decoding is total
 
-Every decoder takes bytes and returns either a fully validated value or a rejection. It never throws past its boundary. It checks every length before reading or allocating, never reads past the end, rejects trailing bytes, and rejects unknown values of every enumeration unless the field says otherwise. This is PLAN.md §6.2 rule 4, and it is what makes the decoders fuzzable in Phase 6.
+Every decoder takes bytes and returns either a fully validated value or a rejection. It never throws past its boundary. It checks every length before reading or allocating, never reads past the end, rejects trailing bytes, and rejects unknown values of every enumeration unless the field says otherwise. This is Killit/docs/security-model.md §6.2 rule 4, and it is what makes the decoders fuzzable in Phase 6.
 
 ### 1.3 Text
 
@@ -72,7 +72,7 @@ Package names are ASCII, 1–255 bytes, matching `[A-Za-z][A-Za-z0-9_]*(\.[A-Za-
 
 ### 2.3 Labels
 
-Every signed, hashed or MACed structure starts with its own label, so bytes signed for one purpose never verify for another. The old QR pairing taught that lesson (PLAN.md §0).
+Every signed, hashed or MACed structure starts with its own label, so bytes signed for one purpose never verify for another. The old QR pairing taught that lesson (docs/protocol-design.md §5.2).
 
 | Label | Used for |
 |---|---|
@@ -94,7 +94,7 @@ Every signed, hashed or MACed structure starts with its own label, so bytes sign
 | Key | Where it lives | What it does |
 |---|---|---|
 | `sign` | **Android Keystore**: P-256, `PURPOSE_SIGN`, `DIGEST_SHA256`, StrongBox when available, else the TEE. It is generated with an attestation challenge (§5) and is never exported or silently regenerated. | The authority key. It signs messages, API requests and the encryption key. |
-| `enc` | An X25519 HPKE key pair in a Tink keyset, encrypted by a Keystore AES-256-GCM key (PLAN.md §5.1) | Decrypts envelopes sent to this phone |
+| `enc` | An X25519 HPKE key pair in a Tink keyset, encrypted by a Keystore AES-256-GCM key (docs/protocol-design.md §5.1) | Decrypts envelopes sent to this phone |
 
 ```
 fp = SHA-256(label("KILLIT-FP-v1") ‖ signPk)                         32 bytes
@@ -212,10 +212,10 @@ The server verifies everything below, following developer.android.com's *Verify 
    - [`challenge_mismatch`] `attestationChallenge` equals the challenge in the body, and that challenge was issued by this server, isn't expired and hasn't been used. It is consumed now.
    - [`security_level`] `attestationSecurityLevel` and `keyMintSecurityLevel` are both `TrustedEnvironment` (1) or `StrongBox` (2). `Software` (0) is accepted only where software attestation is allowed.
    - [`key_properties`] In `hardwareEnforced`: `origin` is `GENERATED` (0), `purpose` contains `SIGN` (2), `algorithm` is `EC` (3), `ecCurve` is `P_256` (1) (Keymaster 2 and 3 may leave it out; then `keySize` must be 256), and `rootOfTrust` is present.
-   - [`application_id`] `attestationApplicationId` (from `softwareEnforced`, or `hardwareEnforced` if absent there) lists exactly one package, `org.tamodak.killit`, and at least one of its signature digests is a configured signing-certificate digest. Production accepts the release certificate. The test server accepts the release and the debug certificates (PLAN.md E-E9).
+   - [`application_id`] `attestationApplicationId` (from `softwareEnforced`, or `hardwareEnforced` if absent there) lists exactly one package, `org.tamodak.killit`, and at least one of its signature digests is a configured signing-certificate digest. Production accepts the release certificate. The test server accepts the release and the debug certificates (Killit/docs/edge-cases.md E-E9).
 8. **Key** [`key_mismatch`]. The leaf's key is a P-256 uncompressed point, its `fp` equals `Killit-Device`, and the request signature verifies with it. This is the proof that the caller holds the key.
 
-The server records the security level, `attestationVersion`, `verifiedBootState`, `deviceLocked`, `osVersion` and `osPatchLevel`, to understand the fleet. It never rejects on boot state (PLAN.md §6.3), and it keeps nothing else from the chain.
+The server records the security level, `attestationVersion`, `verifiedBootState`, `deviceLocked`, `osVersion` and `osPatchLevel`, to understand the fleet. It never rejects on boot state (docs/pairing-server.md §6.3), and it keeps nothing else from the chain.
 
 ### 5.3 Trust anchors
 
@@ -286,7 +286,7 @@ pairId     = SHA-256(label("KILLIT-PAIR-v1") ‖ transcript)
 
 Before showing the code, each phone checks that the peer's `encSig` verifies and that the peer's fingerprint differs from its own. A also checks B's reveal against the commitment it kept. **The peer's address is `fp(peer signPk)` from the bundle, never an id the server supplies.**
 
-**Why the server gets a single guess** (PLAN.md §4). To sit in the middle, the server must show A a fake joiner B′, and B a fake creator A′. B′ has to be committed before A reveals `n_A`, and A′ has to be revealed before B reveals `n_B`. Each phone's code then depends on a nonce the server had to fix before it could see the other one, so the two codes match with probability 10⁻⁶, and a failed attempt shows up as a mismatch on the call.
+**Why the server gets a single guess** (Killit/docs/pairing.md §4). To sit in the middle, the server must show A a fake joiner B′, and B a fake creator A′. B′ has to be committed before A reveals `n_A`, and A′ has to be revealed before B reveals `n_B`. Each phone's code then depends on a nonce the server had to fix before it could see the other one, so the two codes match with probability 10⁻⁶, and a failed attempt shows up as a mismatch on the call.
 
 `pairId` names the pairing from then on. Every message carries it (§10.2), so messages from an earlier pairing between the same two phones can never be replayed into a newer one.
 
@@ -294,7 +294,7 @@ Before showing the code, each phone checks that the peer's `encSig` verifies and
 
 Moving to a new phone (§11.14) runs the same ceremony between the two phones of one person: the **new phone creates** the invite and shows the code, and the **old phone joins**. The two screens sit side by side, so the people compare the safety code by looking rather than on a call, and it guards against exactly the same thing. A code alone would not do: a server that answered the join with its own bundle would receive the old phone's every pairing.
 
-The server can't tell a move from a pairing. Each phone knows which one it started (PLAN.md §15.1, principle 3), and the first message after the link says it: PAIR_OFFER for a pairing, MOVE_REQUEST for a move. A phone that receives the other one ends the ceremony without a pairing. The ceremony's `pairId` names the move's messages, as it names PAIR_OFFER and PAIR_ANSWER.
+The server can't tell a move from a pairing. Each phone knows which one it started (Killit/docs/ui.md §15.1, principle 3), and the first message after the link says it: PAIR_OFFER for a pairing, MOVE_REQUEST for a move. A phone that receives the other one ends the ceremony without a pairing. The ceremony's `pairId` names the move's messages, as it names PAIR_OFFER and PAIR_ANSWER.
 
 ---
 
@@ -302,7 +302,7 @@ The server can't tell a move from a pairing. Each phone knows which one it start
 
 - The server routes messages only between linked phones. A link is undirected and carries no roles, so one link serves both directions of a mutual pairing.
 - A link is created only by step 5 of §6.2, once both phones have confirmed. `POST /v1/links` returns `{ "state": "waiting" | "linked", "peer": base64url(fp) }`, and the phone checks that `peer` equals the fingerprint from the bundle.
-- `GET /v1/links` returns `{ "links": [{ "peer", "lastSeenDaysAgo" }] }`: whole days since the peer's last signed request (PLAN.md §3.11). The server stores only the date.
+- `GET /v1/links` returns `{ "links": [{ "peer", "lastSeenDaysAgo" }] }`: whole days since the peer's last signed request (Killit/docs/pairing.md §3.11). The server stores only the date.
 - `DELETE /v1/links/{peer}` returns `204` and is idempotent. A phone deletes a link only when no pairing is left between the two phones in either direction (after LEAVE, a completed UNPAIR, a declined offer, or the end of device-owner release), and only after its last message on it has been sent.
 - A phone has at most 50 links. The confirmation that would create a 51st answers `409 conflict` with `state: "link_limit"`.
 
@@ -344,8 +344,8 @@ After storing messages for a phone, the server sends that phone one FCM data mes
 ```
 
 - **A phone is addressed by its Firebase Installation ID.** firebase-messaging 26 registers apps by FID and hands it to `onRegistered`; FCM has deprecated the message's `token` field in favour of `fid`. Killit sends the FID with `PUT /v1/devices/me/push` once it has a pairing, and again whenever FCM registers it anew.
-- **A push carries no content.** Killit treats every push, whatever it holds, as "fetch the mailbox now" (PLAN.md §6.2 rule 6). So a forged or replayed push, even one sent with a stolen FCM credential, can at most make phones poll.
-- **Registration cleanup.** `UNREGISTERED` (404), `SENDER_ID_MISMATCH`, or `INVALID_ARGUMENT` about `message.fid`, deletes the FID. `QUOTA_EXCEEDED`, `UNAVAILABLE` and `INTERNAL` are retried with exponential backoff, honouring `Retry-After`. A push that never arrives only delays things: the message waits in the mailbox until the next app open or WorkManager poll (PLAN.md §7).
+- **A push carries no content.** Killit treats every push, whatever it holds, as "fetch the mailbox now" (Killit/docs/security-model.md §6.2 rule 6). So a forged or replayed push, even one sent with a stolen FCM credential, can at most make phones poll.
+- **Registration cleanup.** `UNREGISTERED` (404), `SENDER_ID_MISMATCH`, or `INVALID_ARGUMENT` about `message.fid`, deletes the FID. `QUOTA_EXCEEDED`, `UNAVAILABLE` and `INTERNAL` are retried with exponential backoff, honouring `Retry-After`. A push that never arrives only delays things: the message waits in the mailbox until the next app open or WorkManager poll (Killit/docs/push-and-sync.md §7).
 - **Authentication** uses the FCM HTTP v1 API directly. The server signs a service-account JWT (RS256, scope `https://www.googleapis.com/auth/firebase.messaging`) with `node:crypto`, exchanges it at the account's `token_uri` for an access token, and caches the token until five minutes before it expires. There's no Firebase SDK: one documented HTTPS call doesn't justify about 60 more packages that could reach the credential (Phase 3 decision). TLS certificates are verified and redirects are refused.
 
 ---
@@ -361,7 +361,7 @@ envelope  = HPKE-Seal(recipient encPk, info, aad = empty, plaintext)
           = enc (32) ‖ ciphertext and tag (8208)                                     8240 bytes
 ```
 
-**Every message pads to the same single size,** so the server can't tell kinds apart by length (PLAN.md §5.2). `innerLength` is 122–8126.
+**Every message pads to the same single size,** so the server can't tell kinds apart by length (docs/protocol-design.md §5.2). `innerLength` is 122–8126.
 
 ### 10.2 Inner header and signature
 
@@ -380,7 +380,7 @@ envelope  = HPKE-Seal(recipient encPk, info, aad = empty, plaintext)
 signature = ECDSA(sender's sign key, label("KILLIT-MSG-v1") ‖ inner)
 ```
 
-The request kind is inside the ciphertext (PLAN.md §5.2). Because `recipientFp` is signed, a phone can't re-encrypt a message it received and pass it to a third phone as if it had been sent there.
+The request kind is inside the ciphertext (docs/protocol-design.md §5.2). Because `recipientFp` is signed, a phone can't re-encrypt a message it received and pass it to a third phone as if it had been sent there.
 
 ### 10.3 Opening a message
 
@@ -394,8 +394,8 @@ The receiving phone runs these steps in order. Any failure drops the message sil
 6. The signature verifies with the sender's stored `signPk`.
 7. This `messageId` hasn't been seen from this sender. Seen ids are kept for at least 400 days, and anything with a `createdAt` older than 365 days by the receiver's clock is dropped.
 8. The kind is allowed for the sender's role in that pairing (§11), and the body decodes strictly.
-9. An unknown kind or version isn't dropped. Killit keeps it as received, shows "Update Killit to see this request", and sends no answer (PLAN.md E-F1).
-10. Apply the message (§11, and PLAN.md §3 for the behaviour).
+9. An unknown kind or version isn't dropped. Killit keeps it as received, shows "Update Killit to see this request", and sends no answer (Killit/docs/edge-cases.md E-F1).
+10. Apply the message (§11, and Killit/docs/pairing.md §3.3 for the behaviour).
 
 A DECISION has one more rule, in §11.6.
 
@@ -436,7 +436,7 @@ PAIR_OFFER  = u8     senderRole      1 = GUARDIAN (the sender will guard the rec
                                      2 = PROTECTED (the sender asks the recipient to guard it)
             ‖ text16 selfName        line, 1–40 code points, ≤ 160 bytes: the name the sender calls itself
             ‖ text16 deviceModel     line, 0–64 code points, ≤ 256 bytes: Build.MANUFACTURER + " " + Build.MODEL
-            ‖ bool   appManagement   the protected side's setting (PLAN.md §3.8); 0 when senderRole = GUARDIAN
+            ‖ bool   appManagement   the protected side's setting (Killit/docs/app-management.md §3.8); 0 when senderRole = GUARDIAN
 
 PAIR_ANSWER = u8     answer          1 = ACCEPT, 2 = DECLINE
             ‖ u8     reason          0 with ACCEPT; with DECLINE 1 = USER, 2 = ROLE_CONFLICT
@@ -445,7 +445,7 @@ PAIR_ANSWER = u8     answer          1 = ACCEPT, 2 = DECLINE
             ‖ bool   appManagement   ACCEPT by a joiner that becomes the protected phone: its setting; otherwise 0
 ```
 
-- B started from a section, so it knows the role it expects (PLAN.md §15.1, principle 3). If `senderRole` isn't the opposite of that, B declines with `ROLE_CONFLICT` without asking.
+- B started from a section, so it knows the role it expects (Killit/docs/ui.md §15.1, principle 3). If `senderRole` isn't the opposite of that, B declines with `ROLE_CONFLICT` without asking.
 - A decoder can't see roles, so the creator checks one thing itself: an ACCEPT from a joiner that becomes the *guardian* must have `appManagement = 0`, and is refused otherwise.
 - Each side proposes its own `selfName`. The receiving side stores it as the *default* for its local nickname (A5), and also keeps it unchanged as the peer's own name. The G2 relay and STATUS use the own name, which the other phone can't edit.
 - The pairing exists on B once B sends ACCEPT, and on A once A receives it. The protected side then sends NOTICE `GUARDIAN_ADDED` to its existing guardians (A4).
@@ -454,7 +454,7 @@ PAIR_ANSWER = u8     answer          1 = ACCEPT, 2 = DECLINE
 
 ```
 AppRef  = text16  packageName        §1.4
-        ‖ bytes(32) certDigest       SigningDigest.ofSigners (PLAN.md §1.1)
+        ‖ bytes(32) certDigest       SigningDigest.ofSigners (Killit/docs/default-blocking.md §1.1)
 
 AppInfo = AppRef
         ‖ text16  label              line, 0–100 code points, ≤ 400 bytes
@@ -480,7 +480,7 @@ body = bytes(16) requestId          random; shared by every guardian's copy
 
 ```
 body = bytes(16) requestId
-     ‖ bytes(32) sessionNonce       lives only in the process's memory (PLAN.md §3.4)
+     ‖ bytes(32) sessionNonce       lives only in the process's memory (Killit/docs/requests.md §3.4)
      ‖ text16    explanation        paragraph, 0–500 code points, ≤ 2000 bytes
      ‖ u8        guardianCount
 ```
@@ -510,7 +510,7 @@ body = bytes(16) requestId
      ‖ text16    note               paragraph, 0–300 code points, ≤ 1200 bytes (G9)
 ```
 
-**The protected phone verifies a decision against its own stored request, not against what the decision says** (PLAN.md §5.2). It finds the request by `requestId` and the guardian by `pairId`. Then it rebuilds the inner bytes from:
+**The protected phone verifies a decision against its own stored request, not against what the decision says** (docs/protocol-design.md §5.2). It finds the request by `requestId` and the guardian by `pairId`. Then it rebuilds the inner bytes from:
 
 - `version`, `kind`, and the received `messageId` and `createdAt`;
 - its stored `pairId`, the stored guardian's fingerprint as sender, and its own as recipient;
@@ -520,7 +520,7 @@ It verifies the received signature over `label("KILLIT-MSG-v1") ‖ rebuilt` wit
 
 ### 11.7 STATUS
 
-STATUS keeps every guardian's copy of a request current. It covers PLAN.md's CANCEL: the protected phone sends it when it withdraws a request, and whenever a request's state changes.
+STATUS keeps every guardian's copy of a request current. It covers the design's CANCEL (docs/protocol-design.md §16.1): the protected phone sends it when it withdraws a request, and whenever a request's state changes.
 
 ```
 body = bytes(16) requestId
@@ -570,7 +570,7 @@ Notices only inform. An unknown code shows as "Update Killit to see this" (E-F1)
 
 ### 11.10 LIST_REQUEST and APP_LIST
 
-A guardian asks to see the protected phone's apps, and the protected phone answers with its list (PLAN.md §3.8: pulled, never streamed).
+A guardian asks to see the protected phone's apps, and the protected phone answers with its list (Killit/docs/app-management.md §3.8: pulled, never streamed).
 
 ```
 LIST_REQUEST = bytes(16) listId     random; the APP_LIST pages that answer it carry it
@@ -607,7 +607,7 @@ body = u64 seq                      this guardian's counter in this pairing: sta
 
 A package appears at most once in a MANAGE.
 
-**The protected phone's rules** (PLAN.md §3.8, G2–G4, G7) apply only while management is on; otherwise a MANAGE is ignored. Commands are state-based: for each package the phone keeps the highest `seq` it applied from each guardian, and ignores an entry whose `seq` is not higher, so neither a replayed nor a reordered MANAGE can undo a newer one. Killit's own package is never changed. Each other entry:
+**The protected phone's rules** (Killit/docs/app-management.md §3.8, G2–G4, G7) apply only while management is on; otherwise a MANAGE is ignored. Commands are state-based: for each package the phone keeps the highest `seq` it applied from each guardian, and ignores an entry whose `seq` is not higher, so neither a replayed nor a reordered MANAGE can undo a newer one. Killit's own package is never changed. Each other entry:
 
 - **BLOCKED** applies at once, whatever the certificate, since blocking is the stricter direction. The app is blocked, and stays blocked if it is reinstalled, and every guardian receives NOTICE APP_MANAGED (BLOCKED). If Android refuses to suspend the package, only the sender receives APP_MANAGED (REFUSED). An open request to unblock the package is answered too: as this guardian's denial if it hadn't decided yet (an UNBLOCK_APP then costs a chance, D4), and otherwise by cancelling it (WITHDRAWN).
 - **ALLOWED** needs every guardian, and only counts for the app the guardian saw. The installed app must be signed by the entry's certificate and be blocked now, or the entry is ignored. Then:
@@ -638,7 +638,7 @@ body = bundle    newBundle (162)    the phone that takes this side of the pairin
      ‖ text16    deviceModel        its Build.MANUFACTURER + " " + Build.MODEL, line 0–64
 ```
 
-The old phone of a move sends one HANDOVER for each of its pairings. It is signed with the old phone's key, which its pair already trusts, and that signature is what vouches for the new key (PLAN.md §3.10). The receiver checks that `newBundle`'s encSig verifies and that the new fingerprint is neither its own nor the sender's. From then on the pairing named in the header belongs to `fp(newBundle.signPk)`: its signing key, encryption key and device model are replaced, and everything else stays, the pair id, names and counters included. The new fingerprint's badge is different, as it should be (PLAN.md §3.2).
+The old phone of a move sends one HANDOVER for each of its pairings. It is signed with the old phone's key, which its pair already trusts, and that signature is what vouches for the new key (Killit/docs/moving-to-a-new-phone.md §3.10). The receiver checks that `newBundle`'s encSig verifies and that the new fingerprint is neither its own nor the sender's. From then on the pairing named in the header belongs to `fp(newBundle.signPk)`: its signing key, encryption key and device model are replaced, and everything else stays, the pair id, names and counters included. The new fingerprint's badge is different, as it should be (Killit/docs/pairing.md §3.2).
 
 A protected receiver sends its open requests again, to the new phone, wherever the moving guardian hadn't decided yet, and forgets that pairing's MANAGE sequence numbers (§11.11): they counted the old phone's commands, whose key it no longer trusts, and the new phone counts afresh. It also tells its other guardians, with NOTICE GUARDIAN_MOVED (B6). A HANDOVER is never answered.
 
@@ -684,13 +684,13 @@ MOVE_DONE    = bytes(16) moveId
              ‖ u8     outcome           1 = COMMITTED, 2 = ABANDONED
 ```
 
-1. **Once linked, the new phone sends MOVE_REQUEST.** If the old phone has guardians and `deviceOwner` is 0, it stops there: only a device owner can be protected (PLAN.md §4).
+1. **Once linked, the new phone sends MOVE_REQUEST.** If the old phone has guardians and `deviceOwner` is 0, it stops there: only a device owner can be protected (Killit/docs/pairing.md §4).
 2. **The old phone sends MOVE_STATE**: every pairing, and, if it has guardians, its management setting, its protection options and its decisions about apps. Those are every package it has decided about except the approved ones of its own system image, with each one's chances.
 3. **The new phone checks the pages and answers MOVE_ANSWER.** Every page carries the same `moveId`, `pageCount`, `appManagement` and `protection`; each page from 0 to `pageCount` − 1 arrives exactly once; pair ids and packages are unique across the pages; and every peer's bundle verifies, with no peer being the new phone or the old one. It answers READY and keeps the state staged, not yet in use, or DECLINE: USER when its user gave up, NOT_DEVICE_OWNER when the state has guardians it can't take, HAS_PAIRINGS when it has pairings already (a move needs a phone without any), INVALID when a page breaks a rule.
-4. **On READY, the old phone waits for its user to confirm**, for at most 30 minutes. Then it asks the server to hand its links over (§7), withdraws its own open requests (STATUS, WITHDRAWN), sends a HANDOVER for every pairing, and sends MOVE_DONE (COMMITTED) last, in the same `POST /v1/messages` when everything fits. After that it forgets every pairing and deletes its identity and its registration (`DELETE /v1/devices/me`). If it had guardians, it stays frozen (PLAN.md §3.10): blocked apps stay blocked, and the only way out is releasing device owner. An old phone that gives up sends MOVE_DONE (ABANDONED) instead.
+4. **On READY, the old phone waits for its user to confirm**, for at most 30 minutes. Then it asks the server to hand its links over (§7), withdraws its own open requests (STATUS, WITHDRAWN), sends a HANDOVER for every pairing, and sends MOVE_DONE (COMMITTED) last, in the same `POST /v1/messages` when everything fits. After that it forgets every pairing and deletes its identity and its registration (`DELETE /v1/devices/me`). If it had guardians, it stays frozen (Killit/docs/moving-to-a-new-phone.md §3.10): blocked apps stay blocked, and the only way out is releasing device owner. An old phone that gives up sends MOVE_DONE (ABANDONED) instead.
 5. **On COMMITTED, the new phone puts the state in use**, and it sends nothing to its pairs before then. The old phone sent every HANDOVER before MOVE_DONE, so each pair's mailbox holds the HANDOVER ahead of anything the new phone sends it. On ABANDONED the new phone discards the state. After READY it waits for MOVE_DONE, and only an hour later may its user give up, when the old phone can no longer commit.
 
-Putting the state in use makes the pairings the new phone's own. If they include guardians, the new phone also takes the old one's management setting, protection options (the clock always locked, I1) and chance counters, and keeps its decisions about apps (PLAN.md §3.10). Apps blocked on the old phone are blocked here, and approved ones stay approved, each only for the certificate decided about (or a key it rotated to). An app the user installed here that the old phone never decided about, enabled or not, is blocked as new and announced as an install is (NOTICE APP_INSTALLED, D1). The new phone's own system apps keep what was decided here, unless the old phone blocked the same app; the old phone never hands on the approvals of its own system image (step 2).
+Putting the state in use makes the pairings the new phone's own. If they include guardians, the new phone also takes the old one's management setting, protection options (the clock always locked, I1) and chance counters, and keeps its decisions about apps (Killit/docs/moving-to-a-new-phone.md §3.10). Apps blocked on the old phone are blocked here, and approved ones stay approved, each only for the certificate decided about (or a key it rotated to). An app the user installed here that the old phone never decided about, enabled or not, is blocked as new and announced as an install is (NOTICE APP_INSTALLED, D1). The new phone's own system apps keep what was decided here, unless the old phone blocked the same app; the old phone never hands on the approvals of its own system image (step 2).
 
 ---
 
@@ -705,7 +705,7 @@ Putting the state in use makes the pairings the new phone's own. If they include
 | `links` | the two devices, creation time | `DELETE /v1/links` or the device's deletion |
 | `messages` | sender fingerprint, recipient, envelope, time received | acknowledged |
 
-The server **never** has: roles, names, nicknames, device models, app names or packages, app lists, request kinds, decisions, explanations, or any decryption key. It does see who talks to whom, when and how often (PLAN.md §5.3), the security level of each phone, the public keys exchanged during pairing, and which phone handed its links to which when someone moved (§7). Logs carry no bodies, codes, tokens or IP addresses.
+The server **never** has: roles, names, nicknames, device models, app names or packages, app lists, request kinds, decisions, explanations, or any decryption key. It does see who talks to whom, when and how often (docs/server-trust-model.md §5.3), the security level of each phone, the public keys exchanged during pairing, and which phone handed its links to which when someone moved (§7). Logs carry no bodies, codes, tokens or IP addresses.
 
 ---
 

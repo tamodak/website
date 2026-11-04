@@ -3,7 +3,7 @@
  *
  * They live apart from the HPKE implementation because the encryption-key binding (SPEC.md §3.2)
  * signs them, and the server's entry point must be able to read bundles without carrying any
- * decryption code (PLAN.md §8).
+ * decryption code (docs/pairing-server.md §8).
  */
 
 /** DHKEM(X25519, HKDF-SHA256). */

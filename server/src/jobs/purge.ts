@@ -1,7 +1,7 @@
 /**
- * Periodic cleanup (PLAN.md §8.2): expired challenges and nonces, and invites an hour after they
- * finished or expired. Messages are never purged by age (SPEC.md §8): they wait for their
- * recipient.
+ * Periodic cleanup (docs/pairing-server.md §8.2): expired challenges and nonces, and invites an
+ * hour after they finished or expired. Messages are never purged by age (SPEC.md §8): they wait for
+ * their recipient.
  */
 import { sql, type Kysely } from 'kysely';
 import type { Database } from '../db/schema.ts';

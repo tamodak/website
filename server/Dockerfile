@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# The pairing API (PLAN.md §10), on Ubuntu 24.04 like the server it runs on.
+# The pairing API (docs/infrastructure.md §10), on Ubuntu 24.04 like the server it runs on.
 #
 # Build from the workspace root, so the protocol package and the lockfile are in the context:
 #     docker build -f server/Dockerfile -t killit/api:local .

@@ -34,12 +34,12 @@ serves the domain.
 ## Facts the code doesn't show
 
 - **The specification wins.** Where `protocol/SPEC.md` and anything else disagree about bytes, the
-  specification is right. PLAN.md, where the design was first worked out, explains why
-  ([protocol-design.md](protocol-design.md)).
+  specification is right. [protocol-design.md](protocol-design.md) explains why.
 - **A protocol change is one change:** `SPEC.md`, the reference implementation, the vectors, and
   Killit's copies of the vectors, together.
 - The design was worked out in `PLAN.md` from 2026-09-28. The protocol, the server and the deploy
   stack were built in Phase 3 (done 2026-10-12); the server's part of Phase 5b (moving phones) was
   added on 2026-10-13, when `api.test.tamodak.org` went live. The section numbers in these docs (§2,
   §6.4, …) and the decision ids are PLAN.md's, kept so that older citations still lead somewhere.
+  PLAN.md itself is in git history (deleted on 2026-11-04).
 - The repository is public (N3), so the protocol and the server's privacy claims can be checked.

@@ -7,7 +7,8 @@
  * implementation of the same suite, and the vectors in `vectors/hpke.json` check that the two
  * agree.
  *
- * This file is end-to-end code: the server never imports it (PLAN.md §8, "no decryption code").
+ * This file is end-to-end code: the server never imports it (docs/pairing-server.md §8, "no
+ * decryption code").
  */
 import { createCipheriv, createDecipheriv, type KeyObject } from 'node:crypto';
 import { DecodeError, concat, u16 } from './bytes.ts';

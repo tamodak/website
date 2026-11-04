@@ -1,7 +1,8 @@
 /**
  * The server process: configuration, database, background jobs, HTTP, and an orderly shutdown.
  *
- * Migrations are not run here; `migrate.ts` runs them first, as the schema owner (PLAN.md §6.6).
+ * Migrations are not run here; `migrate.ts` runs them first, as the schema owner
+ * (docs/infrastructure.md §6.6).
  */
 import { buildApp } from './app.ts';
 import { GOOGLE_ROOTS } from './attestation/roots.ts';

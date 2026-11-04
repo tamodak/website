@@ -2,8 +2,8 @@
 
 The pairing server for [Killit](https://github.com/tamodak/Killit), the protocol it speaks, its
 deployment, and (later) the tamodak.org site. How it works, and every decision: [docs/](docs/README.md).
-[PLAN.md](PLAN.md), where the design was first worked out, now maps its old sections to their new
-places.
+`PLAN.md`, where the design was first worked out, is in git history; its sections and decision ids
+live on in the docs here and in Killit's.
 
 | Directory | What |
 |---|---|

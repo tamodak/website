@@ -23,6 +23,6 @@ Docs that live next to their code:
 | [`deploy/RUNBOOK.md`](../deploy/RUNBOOK.md) | How is the server set up, deployed, backed up, restored and updated? |
 | [`server/test/fixtures/attestation/README.md`](../server/test/fixtures/attestation/README.md) | Where do the attestation test chains come from? |
 
-The section numbers (§2, §6.4, …) and decision ids come from [`PLAN.md`](../PLAN.md), where the
-design was first worked out; it now only says where each of its sections went. Killit's side of the
-design is in [`../Killit/docs/`](../../Killit/docs/README.md).
+The section numbers (§2, §6.4, …) and decision ids come from `PLAN.md`, where the design was first
+worked out; it is in git history (deleted on 2026-11-04). Killit's side of the design is in
+[`../Killit/docs/`](../../Killit/docs/README.md).
