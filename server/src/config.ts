@@ -1,6 +1,6 @@
 /**
  * Server configuration, read once from the environment at startup (docs/infrastructure.md §6.6:
- * secrets live in an env file outside git).
+ * secrets live in files outside git, each readable only by the one container that needs it).
  *
  * Every value is validated here, and a bad configuration stops the server before it listens, with
  * every problem listed at once. Secrets may be given inline (`NAME`) or as a file path

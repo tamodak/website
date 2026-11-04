@@ -20,7 +20,7 @@ export const MAX_ENVELOPES_PER_POST = 50;
 export const MAX_MESSAGES_PER_FETCH = 32;
 /** Ids in one `POST /v1/messages/ack`. */
 export const MAX_ACK_IDS = 64;
-/** Links per phone (Killit/docs/pairing.md §3.1, the "high technical cap"). */
+/** Links per phone, a cap purely against abuse (Killit/docs/pairing.md §3.1). */
 export const MAX_LINKS = 50;
 /** The longest a long poll is held. */
 export const MAX_WAIT_SECONDS = 30;

@@ -27,8 +27,8 @@
 	header -Via
 }
 
-# The placeholder (placeholder/): static files, no scripts, so the policy can forbid everything but
-# its own stylesheet (docs/placeholder-site.md: no trackers, no third-party scripts, a strict CSP).
+# The placeholder (placeholder/): static files with no scripts at all and one stylesheet, so the
+# strict policy can forbid everything but that stylesheet (docs/placeholder-site.md).
 tamodak.org {
 	root * /srv/placeholder
 	file_server
