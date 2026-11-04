@@ -75,4 +75,5 @@ The big picture: [docs/overview.md](docs/overview.md). Why a compromised server 
   [pairing server](docs/pairing-server.md), [infrastructure](docs/infrastructure.md),
   [placeholder site](docs/placeholder-site.md)
 - Next to their code: [protocol/SPEC.md](protocol/SPEC.md), [deploy/RUNBOOK.md](deploy/RUNBOOK.md)
-- [PLAN.md](PLAN.md) only maps its old sections to their new places.
+- PLAN.md, where the design was first worked out, is in git history (deleted on 2026-11-04). Its
+  section numbers and decision ids live on in the docs here and in Killit's.
